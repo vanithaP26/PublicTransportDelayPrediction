@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div style="max-width:1200px;margin:auto;">
+  <!-- HEADER + FILTERS -->
+  <div style="display:flex;gap:16px;align-items:center;justify-content:space-between;margin-bottom:14px;">
+    <div>
+      <h1 style="margin:0;color:#0f172a;">Interactive Dashboard</h1>
+      <div style="color:#64748b;margin-top:6px;">Filter by feature, time & mode — see predictions only.</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;">
+      <select id="feature" style="padding:10px 12px;border:1px solid #cfd6e4;border-radius:10px;">
+        <option value="public" {{ 'selected' if feature=='public' else '' }}>Public</option>
+        <option value="cab" {{ 'selected' if feature=='cab' else '' }}>Cab</option>
+        <option value="walk" {{ 'selected' if feature=='walk' else '' }}>Walk</option>
+        <option value="both" {{ 'selected' if feature=='both' else '' }}>Both</option>
+      </select>
+      <select id="range" style="padding:10px 12px;border:1px solid #cfd6e4;border-radius:10px;">
+        <option value="all">All time</option>
+        <option value="7">Last 7 days</option>
+        <option value="30">Last 30 days</option>
+        <option value="90">Last 90 days</option>
+      </select>
+      <div id="modeChips" style="display:flex;gap:8px;flex-wrap:wrap;"></div>
+      <button id="reset" class="btn btn-primary">Reset</button>
+    </div>
+  </div>
+
+  <!-- KPI CARDS -->
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;">
+    <div class="card kpi"><div class="kpi-label">Trips</div><div id="kpiTrips" class="kpi-value">{{ cards.total_trips }}</div></div>
+    <div class="card kpi"><div class="kpi-label">Avg road distance</div><div id="kpiKm" class="kpi-value">{{ cards.avg_rod_km or cards.avg_road_km }} km</div></div>
+    <div class="card kpi"><div class="kpi-label">Fastest mode (avg)</div><div id="kpiFast" class="kpi-value">{{ cards.fastest_mode }}</div></div>
+    <div class="card kpi"><div class="kpi-label">Lowest delay mode</div><div id="kpiDelayMode" class="kpi-value">{{ cards.lowest_delay_mode }}</div></div>
+  </div>
+
+  <!-- CHARTS: MAIN + DONUT -->
+  <div style="display:grid;grid-template-columns:1.2fr .8fr;gap:14px;margin-top:14px;">
+    <div class="card">
+      <div class="card-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span id="mainTitle">Average Total Time (min) — by Mode</span>
+        <div class="seg">
+          <button data-m="time"  class="seg-btn seg-active">Avg Time</button>
+          <button data-m="delay" class="seg-btn">Avg Delay</button>
+          <button data-m="trips" class="seg-btn">Trips</button>
+        </div>
+      </div>
+      <canvas id="chartMain" height="140"></canvas>
+    </div>
+    <div class="card">
+      <div class="card-title">Mode Share</div>
+      <canvas id="chartShare" height="140"></canvas>
+    </div>
+  </div>
+</div>
+
+<style>
+  .card{background:#fff;border-radius:16px;padding:14px 16px 18px;
+        box-shadow:0 12px 28px rgba(2,6,23,.07), 0 2px 8px rgba(2,6,23,.05);
+        border:1px solid #eef2ff;}
+  .card-title{font-weight:600;margin-bottom:8px;color:#0f172a}
+  .kpi{position:relative;overflow:hidden}
+  .kpi::after{content:"";position:absolute;right:-20px;bottom:-20px;width:120px;height:120px;border-radius:999px;background:radial-gradient(closest-side, rgba(59,130,246,.08), transparent);}
+  .kpi-label{color:#64748b;font-size:12px}
+  .kpi-value{font-size:28px;font-weight:700;color:#0f172a;margin-top:4px}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;border:1px solid #c7d2fe;background:#eef2ff;color:#1e3a8a;cursor:pointer;font-size:13px}
+  .chip input{accent-color:#2563eb}
+  .btn{padding:8px 14px;border:none;border-radius:10px;cursor:pointer}
+  .btn-primary{background:#2563eb;color:#fff;box-shadow:0 4px 14px rgba(37,99,235,.25)}
+  .seg{display:flex;gap:6px;background:#f1f5ff;padding:4px;border-radius:12px}
+  .seg-btn{border:none;background:transparent;padding:6px 10px;border-radius:8px;cursor:pointer;color:#1e3a8a}
+  .seg-active{background:#2563eb;color:#fff}
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+<script>
+  const recentRows = {{ recent_rows|safe }};
+  const ALL_MODES = Array.from(new Set(recentRows.map(r=>r.mode))).sort();
+
+  const MODE_COLORS = { "Bus":"#2563eb", "Metro":"#10b981", "Train":"#f59e0b", "Cab":"#7c3aed", "Walk":"#0ea5e9" };
+  const fallbackColor = "#6b7280";
+
+  const featureSel = document.getElementById('feature');
+  const rangeSel = document.getElementById('range');
+  const chipsWrap = document.getElementById('modeChips');
+  const resetBtn = document.getElementById('reset');
+
+  ALL_MODES.forEach(m=>{
+    const lab = document.createElement('label');
+    lab.className = 'chip';
+    lab.innerHTML = `<input type="checkbox" value="${m}" checked> ${m}`;
+    chipsWrap.appendChild(lab);
+  });
+
+  function getFilters(){
+    const days = rangeSel.value === 'all' ? null : Number(rangeSel.value);
+    const modes = [...chipsWrap.querySelectorAll('input[type=checkbox]')].filter(b=>b.checked).map(b=>b.value);
+    const feature = featureSel.value;
+    return { days, modes, feature };
+  }
+
+  function applyFilters(){
+    const { days, modes, feature } = getFilters();
+    const now = new Date();
+    const cutoff = days ? new Date(now.getTime() - days*24*3600*1000) : null;
+
+    let out = recentRows.filter(r=>{
+      if (!modes.includes(r.mode)) return false;
+      if (feature !== 'both' && (r.feature || 'public') !== feature) return false;
+      if (cutoff){
+        const t = new Date((r.ts||'').replace(' ', 'T'));
+        if (!isNaN(t) && t < cutoff) return false;
+      }
+      return true;
+    });
+    return out;
+  }
+
+  const mean = a => a.length ? a.reduce((x,y)=>x+y,0)/a.length : 0;
+  const round1 = x => Math.round(x*10)/10;
+
+  function groupByMode(rows){
+    const g = {};
+    rows.forEach(r=>{
+      const m = r.mode;
+      (g[m] ||= {count:0, times:[], delays:[]});
+      g[m].count++;
+      if (r.total_time!=null) g[m].times.push(Number(r.total_time)||0);
+      if (r.delay!=null) g[m].delays.push(Number(r.delay)||0);
+    });
+    return g;
+  }
+
+  let chartMain, chartShare;
+  const mainCtx  = document.getElementById('chartMain').getContext('2d');
+  const shareCtx = document.getElementById('chartShare').getContext('2d');
+  const segBtns = [...document.querySelectorAll('.seg-btn')];
+  let currentMetric = 'time';
+  segBtns.forEach(b=> b.onclick = ()=>{ segBtns.forEach(x=>x.classList.remove('seg-active')); b.classList.add('seg-active'); currentMetric = b.dataset.m; refresh(); });
+
+  function buildMain(metric, g){
+    const modes = Object.keys(g).sort();
+    const labels = modes;
+    const data = modes.map(m=>{
+      if (metric==='time')  return round1(mean(g[m].times));
+      if (metric==='delay') return round1(mean(g[m].delays));
+      return g[m].count;
+    });
+    const colors = modes.map(m=>MODE_COLORS[m]||fallbackColor);
+
+    if (chartMain) chartMain.destroy();
+    chartMain = new Chart(mainCtx, {
+      type:'bar',
+      data:{ labels, datasets:[{ data, backgroundColor: colors, borderRadius:10 }]},
+      options:{
+        responsive:true,
+        plugins:{
+          legend:{display:false},
+          tooltip:{ callbacks:{ label: ctx=>{
+            const val = ctx.parsed.y;
+            return metric==='trips' ? `Trips: ${val}` :
+                   metric==='time'  ? `Avg time: ${val} min` :
+                                      `Avg delay: ${val} min`;
+          }}},
+          datalabels:{ anchor:'end', align:'end', offset:4, color:'#0f172a',
+            formatter:(v)=> v? v:'' }
+        },
+        scales:{ y:{ beginAtZero:true, title:{display:true,text: metric==='trips'?'Trips':'Minutes'} } }
+      }
+    });
+    document.getElementById('mainTitle').textContent =
+      metric==='time' ? 'Average Total Time (min) — by Mode' :
+      metric==='delay' ? 'Average Delay (min) — by Mode' :
+                         'Trips — by Mode';
+  }
+
+  function buildShare(g){
+    const modes = Object.keys(g).sort();
+    const data  = modes.map(m=>g[m].count);
+    if (chartShare) chartShare.destroy();
+    chartShare = new Chart(shareCtx, {
+      type:'doughnut',
+      data:{ labels:modes, datasets:[{ data, backgroundColor: modes.map(m=>MODE_COLORS[m]||fallbackColor) }]},
+      options:{ responsive:true, plugins:{ legend:{ position:'bottom' } } }
+    });
+  }
+
+  function refresh(){
+    const rows = applyFilters();
+    const g = groupByMode(rows);
+
+    // KPIs
+    document.getElementById('kpiTrips').innerText = rows.length;
+    let fastest='-', lowDelay='-', bestT=1e9, bestD=1e9;
+    Object.keys(g).forEach(m=>{
+      const mt = mean(g[m].times), md = mean(g[m].delays);
+      if (g[m].times.length && mt < bestT){ bestT=mt; fastest=m; }
+      if (g[m].delays.length && md < bestD){ bestD=md; lowDelay=m; }
+    });
+    document.getElementById('kpiFast').innerText = fastest;
+    document.getElementById('kpiDelayMode').innerText = lowDelay;
+
+    buildMain(currentMetric, g);
+    buildShare(g);
+  }
+
+  featureSel.addEventListener('change', ()=>{
+    // reload page to fetch server-side feature selection (so cards count match too)
+    const val = featureSel.value;
+    const base = "{{ url_for('dashboard') }}";
+    const url = val ? (base + "?feature=" + encodeURIComponent(val)) : base;
+    window.location.href = url;
+  });
+
+  rangeSel.onchange = refresh;
+  chipsWrap.addEventListener('change', refresh);
+  resetBtn.onclick = ()=>{
+    rangeSel.value = 'all';
+    chipsWrap.querySelectorAll('input[type=checkbox]').forEach(b=>b.checked = true);
+    document.querySelectorAll('.seg-btn').forEach(x=>x.classList.remove('seg-active'));
+    document.querySelector('.seg-btn[data-m="time"]').classList.add('seg-active');
+    currentMetric = 'time';
+    refresh();
+  };
+
+  refresh();
+</script>
+
+{% endblock %}

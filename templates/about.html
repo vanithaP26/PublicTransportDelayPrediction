@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<div style="max-width:900px;margin:auto;background:#fff;padding:24px;border-radius:12px;box-shadow:0 6px 18px rgba(0,0,0,.06);">
+  <h2 style="margin:0 0 8px;color:#007BFF;">About</h2>
+  <p style="color:#444;margin:8px 0 16px;">
+    Public Transport Delay Prediction for <strong>Karnataka</strong> (primary focus <strong>Bengaluru</strong>).
+    We estimate delays and ETAs for <strong>Bus, Metro, Train</strong> using live routing, traffic heuristics and weather influence.
+  </p>
+
+  <h3>What’s included</h3>
+  <ul>
+    <li>Only shows modes that are actually available between your Source and Destination</li>
+    <li>Bengaluru-first geocoding (auto fallbacks to Karnataka, India)</li>
+    <li>Road route via TomTom for bus path; metro/train estimated with corridor speeds</li>
+    <li>Weather & traffic impact applied to delays</li>
+  </ul>
+
+  <h3>Scope</h3>
+  <ul>
+    <li><strong>Coverage:</strong> Karnataka</li>
+    <li><strong>Primary City:</strong> Bengaluru (Metro supported only within metro city)</li>
+  </ul>
+
+  <h3>How to use</h3>
+  <ol>
+    <li>Go to <em>Plan Trip</em>, type places (e.g., “Majestic, Bengaluru”, “Indiranagar Metro Station”)</li>
+    <li>Submit to view available modes, delays, ETAs, fare and map</li>
+    <li>Open <em>Dashboard</em> for interactive summaries</li>
+  </ol>
+</div>
+{% endblock %}

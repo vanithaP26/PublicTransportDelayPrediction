@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>History</h2>
+<div style="margin:10px 0 14px;">
+  <a href="{{ url_for('export_history') }}" class="btn btn-primary">Export CSV</a>
+</div>
+<table style="width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;">
+  <thead>
+    <tr style="background:#eef4ff;">
+      <th style="padding:10px;">ID</th><th>Time</th><th>Source</th><th>Destination</th><th>Road (km)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr style="border-bottom:1px solid #eee;">
+      <td style="padding:8px;">{{ r[0] }}</td>
+      <td>{{ r[1] }}</td>
+      <td>{{ r[2] }}</td>
+      <td>{{ r[3] }}</td>
+      <td>{{ r[4] }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

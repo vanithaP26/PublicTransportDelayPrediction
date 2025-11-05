@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title or "Transport Delay Prediction" }}</title>
+  <style>
+    body { margin:0; font-family:'Poppins',sans-serif; background:#f5f7fa; }
+    nav {
+      background:#007BFF; color:white;
+      display:flex; justify-content:space-between; align-items:center;
+      padding:15px 50px;
+    }
+    nav .logo { font-weight:600; font-size:20px; }
+    nav ul { list-style:none; display:flex; margin:0; padding:0; }
+    nav ul li { margin-left:25px; }
+    nav ul li a { color:white; text-decoration:none; font-weight:500; transition:0.3s; }
+    nav ul li a:hover { color:#FFD43B; }
+    footer { text-align:center; padding:15px; background:#007BFF; color:white; margin-top:40px; }
+    .content { padding:30px; }
+    .btn{padding:10px 14px;border:none;border-radius:10px;cursor:pointer}
+    .btn-primary{background:#2563eb;color:#fff;box-shadow:0 4px 14px rgba(37,99,235,.25)}
+  </style>
+</head>
+<body>
+  <nav>
+    <div class="logo">🚦 Transport Delay</div>
+    <ul>
+      <li><a href="{{ url_for('home') }}">Home</a></li>
+      <li><a href="{{ url_for('plan') }}">Plan Trip (Public)</a></li>
+      <li><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
+      <li><a href="{{ url_for('recent') }}">Recent</a></li>
+      <li><a href="{{ url_for('about') }}">About</a></li>
+    </ul>
+  </nav>
+
+  <div class="content">{% block content %}{% endblock %}</div>
+
+  <footer>
+    &copy; {{ current_year or "2025" }} | Developed by Your Name | Transport Delay Prediction System
+  </footer>
+</body>
+</html>

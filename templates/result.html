@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div style="max-width:960px;margin:auto;">
+  <h1 style="text-align:center;color:#007BFF;margin:0 0 6px;">
+    Public Transport — Prediction
+  </h1>
+  <h3 style="text-align:center;color:#555;margin:0 0 16px;">
+    {{ source }} → {{ destination }} · {{ distance_km }} km
+  </h3>
+
+  <!-- Simple actions -->
+  <div style="display:flex;gap:10px;justify-content:center;margin-bottom:16px;flex-wrap:wrap;">
+    <a class="btn btn-primary" href="{{ url_for('plan') }}">Search / Predict again</a>
+    <a class="btn btn-primary" href="{{ url_for('dashboard') }}">Open Dashboard</a>
+  </div>
+
+  {% if no_modes_msg %}
+    <div style="background:#fff3cd;border:1px solid #ffeeba;color:#856404;padding:12px;border-radius:8px;margin-bottom:16px;">
+      {{ no_modes_msg }}
+    </div>
+  {% endif %}
+
+  <!-- Smart Suggestions -->
+  <div id="suggestBlock" style="display:none;margin-bottom:16px;"></div>
+
+  <!-- Weather -->
+  <div style="display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin-bottom:10px;">
+    <div style="background:#fff;border-radius:10px;padding:12px 18px;box-shadow:0 2px 8px rgba(0,0,0,.06);">
+      🌡️ <b>Temp:</b> {{ weather.temperature_c }} °C
+    </div>
+    <div style="background:#fff;border-radius:10px;padding:12px 18px;box-shadow:0 2px 8px rgba(0,0,0,.06);">
+      💧 <b>Humidity:</b> {{ weather.humidity_pct }}%
+    </div>
+    <div style="background:#fff;border-radius:10px;padding:12px 18px;box-shadow:0 2px 8px rgba(0,0,0,.06);">
+      🌧️ <b>Rain:</b> {{ weather.rain_mm }} mm
+    </div>
+  </div>
+
+  <!-- Results table -->
+  {% if rows and rows|length > 0 %}
+  <div style="background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.1);padding:16px;">
+    <h3 style="margin:0 0 8px;">Summary</h3>
+    <table style="width:100%;border-collapse:collapse;text-align:center;">
+      <thead>
+        <tr style="background:#007BFF;color:white;">
+          <th style="padding:10px;">Mode</th>
+          <th>Traffic Index</th>
+          <th>Predicted Delay (min)</th>
+          <th>Total Time (min)</th>
+          <th>Estimated Fare (₹)</th>
+          <th>Note</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr style="border-bottom:1px solid #eee;">
+          <td style="padding:10px;">{{ r.mode }}</td>
+          <td>{{ r.traffic_index }}</td>
+          <td>{{ r.predicted_delay }}</td>
+          <td>{{ r.total_time_min }}</td>
+          <td>{{ r.fare }}</td>
+          <td>{{ r.delay_note }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align:center;color:#64748b;background:#fff;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.08);padding:16px;">
+    No modes available for this route.
+  </div>
+  {% endif %}
+
+  <!-- Map -->
+  <div style="margin-top:18px;">
+    <h3 style="text-align:center;">Route Map</h3>
+    <div id="map" style="height:480px;width:100%;border-radius:12px;"></div>
+  </div>
+</div>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.3/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.3/dist/leaflet.js"></script>
+<script>
+  // Suggestions from server
+  const suggestions = {{ suggestions|safe }};
+
+  (function renderSuggestions(){
+    const block = document.getElementById('suggestBlock');
+    if (!suggestions || !suggestions.length) return;
+    block.style.display = 'block';
+    const cards = suggestions.map(s => `
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:12px;margin:6px 0;display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-weight:700;color:#0f172a">${s.type}: ${s.title}</div>
+          <div style="color:#334155;margin-top:2px">${s.detail}</div>
+          <div style="color:#64748b;margin-top:2px;font-size:12px">${s.note||''}</div>
+        </div>
+        <div style="font-size:20px;">${s.type==='Walk'?'🚶':'🚕'}</div>
+      </div>
+    `).join('');
+    block.innerHTML = `<h3 style="margin:0 0 8px;">Smart Suggestions</h3>${cards}`;
+  })();
+
+  // Map
+  const payload = {{ map_payload | safe }};
+  const map = L.map('map').setView(
+    [(payload.src.lat + payload.dst.lat)/2, (payload.src.lon + payload.dst.lon)/2], 11
+  );
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 19}).addTo(map);
+
+  const src = L.marker([payload.src.lat, payload.src.lon]).addTo(map).bindPopup(payload.src.label);
+  const dst = L.marker([payload.dst.lat, payload.dst.lon]).addTo(map).bindPopup(payload.dst.label);
+
+  const coords = payload.road_polyline || [];
+  if (coords.length > 1){
+    const line = L.polyline(coords, { color: '#2563eb', weight: 4 }).addTo(map);
+    map.fitBounds(line.getBounds(), { padding:[30,30] });
+  } else {
+    const line = L.polyline([[payload.src.lat, payload.src.lon],[payload.dst.lat, payload.dst.lon]],
+                            { color:'#94a3b8', weight:3, dashArray:'6,8' }).addTo(map);
+    map.fitBounds(line.getBounds(), { padding:[30,30] });
+  }
+</script>
+{% endblock %}

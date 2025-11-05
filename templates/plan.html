@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% block content %}
+<div style="max-width:720px;margin:auto;background:#fff;padding:24px;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.08);">
+  <h2 style="margin:0 0 12px;color:#007BFF;">Plan a trip (Public Transport)</h2>
+
+  <form action="{{ url_for('predict') }}" method="POST" style="display:grid;gap:16px;">
+    <div style="position:relative;">
+      <label>Source</label>
+      <input id="source" name="source" required autocomplete="off"
+             placeholder="Type: e.g., ‘Majestic’"
+             style="width:100%;padding:10px;border:1px solid #cfd6e4;border-radius:8px;">
+      <div id="src-suggest" class="suggest"></div>
+    </div>
+
+    <div style="position:relative;">
+      <label>Destination</label>
+      <input id="destination" name="destination" required autocomplete="off"
+             placeholder="Type: e.g., ‘Indiranagar’"
+             style="width:100%;padding:10px;border:1px solid #cfd6e4;border-radius:8px;">
+      <div id="dst-suggest" class="suggest"></div>
+    </div>
+
+    <div>
+      <label>Date</label>
+      <input name="date" type="date" required
+             style="width:100%;padding:10px;border:1px solid #cfd6e4;border-radius:8px;">
+    </div>
+    <div>
+      <label>Hour (0–23)</label>
+      <input name="hour" type="number" min="0" max="23" required
+             style="width:100%;padding:10px;border:1px solid #cfd6e4;border-radius:8px;">
+    </div>
+
+    <button class="btn btn-primary" type="submit" style="width:100%;">Predict</button>
+  </form>
+</div>
+
+<style>
+  .suggest{
+    position:absolute;left:0;right:0;top:100%;
+    background:#fff;border:1px solid #e6eaf2;border-top:none;
+    border-radius:0 0 8px 8px;box-shadow:0 6px 18px rgba(0,0,0,.06);
+    display:none;max-height:240px;overflow:auto;z-index:10;
+  }
+  .suggest button{
+    width:100%;text-align:left;border:none;background:#fff;cursor:pointer;
+    padding:10px 12px;font-size:14px;border-bottom:1px solid #f1f3f8;
+  }
+  .suggest button:hover{background:#f7faff}
+</style>
+
+<script>
+  // persist inputs
+  (function(){
+    const fields = ['source','destination','date','hour'];
+    window.addEventListener('DOMContentLoaded', ()=>{
+      fields.forEach(id=>{
+        const el = document.querySelector(`[name="${id}"]`);
+        const v = localStorage.getItem('plan_'+id);
+        if (el && v) el.value = v;
+      });
+    });
+    document.addEventListener('input', (e)=>{
+      const n = e.target && e.target.name;
+      if (n && fields.includes(n)){
+        localStorage.setItem('plan_'+n, e.target.value || '');
+      }
+    });
+  })();
+</script>
+
+<script>
+  // In-memory cache & abort control for speed + 600ms debounce
+  const _cache = new Map();
+  let _ctrlSrc, _ctrlDst;
+
+  async function fetchSuggest(q, which){
+    if (_cache.has(q)) return _cache.get(q);
+    const ctrl = new AbortController();
+    if (which === 'src' && _ctrlSrc) _ctrlSrc.abort();
+    if (which === 'dst' && _ctrlDst) _ctrlDst.abort();
+    if (which === 'src') _ctrlSrc = ctrl; else _ctrlDst = ctrl;
+    try{
+      const res = await fetch(`/suggest?q=${encodeURIComponent(q)}`, { signal: ctrl.signal });
+      const data = await res.json();
+      _cache.set(q, data);
+      return data;
+    }catch(e){ return []; }
+  }
+
+  function attachTypeahead(inputId, listId, which){
+    const input = document.getElementById(inputId);
+    const box   = document.getElementById(listId);
+
+    function render(items){
+      if(!items.length){ box.style.display="none"; box.innerHTML=""; return; }
+      box.innerHTML = items.slice(0,6).map(v=>`<button type="button" data-v="${v.replace(/"/g,'&quot;')}">${v}</button>`).join("");
+      box.style.display="block";
+      [...box.querySelectorAll('button')].forEach(b=>{
+        b.onclick = ()=>{ input.value = b.getAttribute('data-v'); box.style.display='none'; };
+      });
+    }
+
+    let t;
+    input.addEventListener('input', ()=>{
+      const q = input.value.trim();
+      if (t) clearTimeout(t);
+      if (q.length < 3){ render([]); return; }
+      t = setTimeout(async ()=>{
+        const list = await fetchSuggest(q, which);
+        render(list);
+      }, 600);
+    });
+
+    input.addEventListener('focus', async ()=>{
+      const q = input.value.trim();
+      if (q.length < 3){ render([]); return; }
+      const list = await fetchSuggest(q, which);
+      render(list);
+    });
+
+    document.addEventListener('click', (e)=>{
+      if(!box.contains(e.target) && e.target!==input){ box.style.display='none'; }
+    });
+  }
+
+  attachTypeahead('source','src-suggest','src');
+  attachTypeahead('destination','dst-suggest','dst');
+</script>
+{% endblock %}
