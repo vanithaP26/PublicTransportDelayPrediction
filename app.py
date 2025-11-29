@@ -84,7 +84,7 @@ except Exception as e:
 DEFAULT_CITY  = "Bengaluru"
 DEFAULT_STATE = "Karnataka"
 DEFAULT_COUNTRY = "India"
-OSM_UA = {"User-Agent": "public-pt-delay-app"}
+OSM_UA = {"User-Agent": "public-pt-delay-app (demo)"}
 
 def _osm_try(query: str, prox=None):
     try:
@@ -112,16 +112,36 @@ def _geo_strong_karnataka(q: str, prox=None):
     ]
     seen = set()
     for a in attempts:
-        if a in seen: continue
+        if a in seen:
+            continue
         seen.add(a)
         res = _osm_try(a, prox=prox)
         if res:
             return res
     return None
 
+# ------------ Hard-coded fallback locations (for demo reliability) ------------
+FALLBACK_PLACES = {
+    "majestic": (12.9789, 77.5715, "Majestic, Bengaluru, Karnataka, India"),
+    "majestic, bengaluru": (12.9789, 77.5715, "Majestic, Bengaluru, Karnataka, India"),
+    "ksr bengaluru": (12.9765, 77.5726, "KSR Bengaluru (Majestic), Karnataka, India"),
+    "koppal": (15.3500, 76.1500, "Koppal, Karnataka, India"),
+}
+
+def _geo_with_fallback(text: str, prox=None):
+    """Try OSM first, then fallback dictionary for known demo places."""
+    res = _geo_strong_karnataka(text, prox=prox)
+    if res:
+        return res
+    key = (text or "").strip().lower()
+    if key in FALLBACK_PLACES:
+        lat, lon, label = FALLBACK_PLACES[key]
+        return lat, lon, label
+    return None
+
 def geocode_pair(src_text: str, dst_text: str):
-    s = _geo_strong_karnataka(src_text)
-    d = _geo_strong_karnataka(dst_text)
+    s = _geo_with_fallback(src_text)
+    d = _geo_with_fallback(dst_text)
     if not s or not d:
         return None, None, ("We couldn’t locate one of those places. "
                             "Try a more specific name (e.g., ‘Majestic, Bengaluru’).")
@@ -129,8 +149,8 @@ def geocode_pair(src_text: str, dst_text: str):
 
     # If very far, bias a second pass toward each other
     if geodesic(s_ll, d_ll).km > 120:
-        s2 = _geo_strong_karnataka(src_text, prox=d_ll) or s
-        d2 = _geo_strong_karnataka(dst_text, prox=s_ll) or d
+        s2 = _geo_with_fallback(src_text, prox=d_ll) or s
+        d2 = _geo_with_fallback(dst_text, prox=s_ll) or d
         s_ll, d_ll = (s2[0], s2[1]), (d2[0], d2[1])
         if geodesic(s_ll, d_ll).km > 800:
             return None, None, ("Those places seem extremely far apart. "
@@ -165,7 +185,7 @@ def tomtom_route(src_ll, dst_ll):
     except Exception as e:
         return None, f"TomTom route error: {e}"
 
-# ------------ Helpers for strict availability (Public PT) ------------
+# ------------ Helpers for availability / regions ------------
 BLR_METRO_STATIONS = [
     (12.9789, 77.5715),  # Majestic
     (13.0186, 77.5560),  # Yeshwanthpur
@@ -195,42 +215,48 @@ def _min_dist_km(pt, stations):
     best = 1e9
     for s in stations:
         d = geodesic(pt, s).km
-        if d < best: best = d
+        if d < best:
+            best = d
     return best
 
-# ------------ Mode availability (Public PT only, STRICT) ------------
+def in_karnataka(pt):
+    """Simple bbox check used for generic Bus/Train availability."""
+    lat, lon = pt
+    return 11.5 <= lat <= 18.5 and 74.0 <= lon <= 78.7
+
+# ------------ Mode availability (Public PT, generic Karnataka rules) ------------
 def available_public_modes(road_km, has_route, src_ll, dst_ll):
     """
-    Only truly-usable public modes.
-    - Bus: needs TomTom route and <= 250 km
-    - Metro: BOTH ends near BLR metro (<= 3.5 km) and trip <= 40 km
-    - Train: BOTH ends near major rail (<= 10 km) and trip >= 20 km
+    PUBLIC MODES (generic Karnataka logic)
+
+    - Bus  : Any valid road route inside Karnataka (1–800 km)
+    - Metro: Only if both ends near BLR metro (<= 3.5 km) and trip <= 40 km
+    - Train: Any long intercity trip (>= 120 km) inside Karnataka
     """
     avail = []
+    if road_km is None:
+        return avail
 
-    # BUS
-    if has_route and road_km is not None and road_km <= 250:
+    # BUS – generic within Karnataka
+    if has_route and in_karnataka(src_ll) and in_karnataka(dst_ll) and 1 <= road_km <= 800:
         avail.append("Bus")
 
-    # METRO (Bengaluru only)
-    if road_km is not None:
-        src_metro_km = _min_dist_km(src_ll, BLR_METRO_STATIONS)
-        dst_metro_km = _min_dist_km(dst_ll, BLR_METRO_STATIONS)
-        if src_metro_km <= 3.5 and dst_metro_km <= 3.5 and road_km <= 40:
-            avail.append("Metro")
+    # METRO – strict Bengaluru logic
+    src_metro_km = _min_dist_km(src_ll, BLR_METRO_STATIONS)
+    dst_metro_km = _min_dist_km(dst_ll, BLR_METRO_STATIONS)
+    if src_metro_km <= 3.5 and dst_metro_km <= 3.5 and road_km <= 40:
+        avail.append("Metro")
 
-    # TRAIN (statewide)
-    if road_km is not None:
-        src_rail_km = _min_dist_km(src_ll, KA_RAIL_STATIONS)
-        dst_rail_km = _min_dist_km(dst_ll, KA_RAIL_STATIONS)
-        if src_rail_km <= 10 and dst_rail_km <= 10 and road_km >= 20:
-            avail.append("Train")
+    # TRAIN – heuristic for long intercity routes in Karnataka
+    if road_km >= 120 and in_karnataka(src_ll) and in_karnataka(dst_ll):
+        avail.append("Train")
 
     # unique
     out, seen = [], set()
     for m in avail:
         if m not in seen:
-            out.append(m); seen.add(m)
+            out.append(m)
+            seen.add(m)
     return out
 
 # ------------ Weather / Traffic / Delay ------------
@@ -243,8 +269,10 @@ def base_traffic_index(lat, lon, when=None):
     return 40.0 if (8 <= hour <= 11 or 17 <= hour <= 20) else 28.0
 
 def traffic_for_mode(base_idx, mode):
-    if mode == "Bus":                 return base_idx
-    if mode in ("Metro","Train"):     return round(base_idx * 0.2, 1)
+    if mode == "Bus":
+        return base_idx
+    if mode in ("Metro", "Train"):
+        return round(base_idx * 0.2, 1)
     return base_idx
 
 def predict_delay_minutes(features):
@@ -253,15 +281,15 @@ def predict_delay_minutes(features):
     rain = max(features.get("rain_mm", 0.0), 0.0)
     mode = features.get("mode", "Bus")
     # heuristic if model missing
-    mode_factor = {"Bus":6.0, "Metro":3.0, "Train":3.5, "Cab":6.0, "Walk":1.0}.get(mode, 5.0)
-    delay = dist * (traffic/30.0) * (1.0 + min(rain,20.0)/50.0) * mode_factor
+    mode_factor = {"Bus": 6.0, "Metro": 3.0, "Train": 3.5, "Cab": 6.0, "Walk": 1.0}.get(mode, 5.0)
+    delay = dist * (traffic / 30.0) * (1.0 + min(rain, 20.0) / 50.0) * mode_factor
     if model:
         try:
             X = [[
                 dist, traffic, rain,
                 features.get("humidity_pct", 0.0),
                 features.get("temperature_c", 0.0),
-                {"Bus":1,"Metro":2,"Train":3,"Cab":4,"Walk":5}.get(mode, 0)
+                {"Bus": 1, "Metro": 2, "Train": 3, "Cab": 4, "Walk": 5}.get(mode, 0)
             ]]
             pred = float(model.predict(X)[0])
             return max(pred, 0.0)
@@ -295,11 +323,13 @@ def suggest():
         out, seen = [], set()
         for d in data:
             name = d.get("display_name", "")
-            if not name: continue
+            if not name:
+                continue
             key = name.lower()
-            if key in seen: continue
+            if key in seen:
+                continue
             addr = d.get("address", {})
-            if "karnataka" not in (addr.get("state","") + " " + name).lower():
+            if "karnataka" not in (addr.get("state", "") + " " + name).lower():
                 continue
             seen.add(key)
             out.append(name)
@@ -436,7 +466,7 @@ def predict():
     weather = get_live_weather(*src_ll)
     base_tr = base_traffic_index(*src_ll)
 
-    # Public modes (strict availability)
+    # Public modes (generic availability)
     has_route = route_data is not None
     modes = available_public_modes(road_km, has_route, src_ll, dst_ll)
 
@@ -444,7 +474,8 @@ def predict():
     rows = []
     for mode in modes:
         if mode == "Bus":
-            if not has_route: continue
+            if not has_route:
+                continue
             dist_for_mode = road_km
             base_time = bus_time_min
         elif mode == "Metro":
@@ -469,9 +500,12 @@ def predict():
         total_time = round(max(base_time + delay_min, 1.0), 2)
 
         # simple fares
-        if mode == "Bus":     fare = round(5 + 2.5 * dist_for_mode, 2)
-        elif mode == "Metro": fare = round(10 + 3.0 * dist_for_mode, 2)
-        else:                 fare = round(8 + 2.0 * dist_for_mode, 2)
+        if mode == "Bus":
+            fare = round(5 + 2.5 * dist_for_mode, 2)
+        elif mode == "Metro":
+            fare = round(10 + 3.0 * dist_for_mode, 2)
+        else:
+            fare = round(8 + 2.0 * dist_for_mode, 2)
 
         delay_note = "No significant delay" if delay_min < 3 else f"~{delay_min} min delay"
 
@@ -741,7 +775,7 @@ def walk_predict():
         source=source, destination=destination,
         weather=weather, rows=rows,
         map_payload=json.dumps(map_payload),
-        distance_km=round(path_km,2),
+        distance_km=round(path_km, 2),
         no_modes_msg=None
     )
 
@@ -793,8 +827,10 @@ def dashboard():
 
     for ts, src, dst, modes_json, rk, feat in recs:
         if rk is not None:
-            try: road_kms.append(float(rk))
-            except: pass
+            try:
+                road_kms.append(float(rk))
+            except:
+                pass
         if not modes_json:
             continue
         try:
@@ -803,11 +839,15 @@ def dashboard():
             rows = []
         for r in rows:
             m = r.get("mode")
-            if not m: continue
+            if not m:
+                continue
             count[m] += 1
-            if "total_time_min" in r: times[m].append(float(r["total_time_min"]))
-            if "predicted_delay" in r: delays[m].append(float(r["predicted_delay"]))
-            if "fare" in r: fares[m].append(float(r["fare"]))
+            if "total_time_min" in r:
+                times[m].append(float(r["total_time_min"]))
+            if "predicted_delay" in r:
+                delays[m].append(float(r["predicted_delay"]))
+            if "fare" in r:
+                fares[m].append(float(r["fare"]))
             flat_rows.append({
                 "ts": ts, "source": src, "destination": dst,
                 "mode": m,
@@ -819,14 +859,25 @@ def dashboard():
 
     modes_sorted = sorted(count.keys())
     chart_counts = [count[m] for m in modes_sorted]
-    chart_time   = [round(mean(times[m]),1)  for m in modes_sorted]
-    chart_delay  = [round(mean(delays[m]),1) for m in modes_sorted]
+    chart_time   = [round(mean(times[m]), 1)  for m in modes_sorted]
+    chart_delay  = [round(mean(delays[m]), 1) for m in modes_sorted]
+
+    # simple cards (fastest & lowest delay)
+    fastest_mode = "-"
+    lowest_delay_mode = "-"
+    if modes_sorted:
+        avg_time_by_mode = {m: mean(times[m]) for m in modes_sorted if times[m]}
+        avg_delay_by_mode = {m: mean(delays[m]) for m in modes_sorted if delays[m]}
+        if avg_time_by_mode:
+            fastest_mode = min(avg_time_by_mode, key=avg_time_by_mode.get)
+        if avg_delay_by_mode:
+            lowest_delay_mode = min(avg_delay_by_mode, key=avg_delay_by_mode.get)
 
     cards = {
         "total_trips": len(recs),
         "avg_road_km": round(mean(road_kms), 1) if road_kms else 0,
-        "fastest_mode": (min({m:round(mean(times[m]),1) for m in modes_sorted}, key=lambda k: mean(times[k])) if modes_sorted else "-"),
-        "lowest_delay_mode": (min({m:round(mean(delays[m]),1) for m in modes_sorted}, key=lambda k: mean(delays[k])) if modes_sorted else "-")
+        "fastest_mode": fastest_mode,
+        "lowest_delay_mode": lowest_delay_mode
     }
 
     return render_template("dashboard.html",
