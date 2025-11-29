@@ -1,96 +1,271 @@
-{% extends "base.html" %}
-{% block content %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>PT Delay Planner</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<!-- HERO -->
-<div style="max-width:1200px;margin:auto;display:grid;grid-template-columns:1.2fr .8fr;gap:24px;align-items:center;">
-  <div>
-    <h1 style="margin:0 0 10px;color:#0f172a;line-height:1.15;">
-      Predict delays for <span style="color:#2563eb;">Public Transport</span><br/>
-      with smart Walk & Cab suggestions
-    </h1>
-    <p style="color:#475569;margin:10px 0 16px;">
-      Karnataka coverage · Bengaluru-first search · Realistic routes & ETAs ·
-      Only the modes actually available between your locations.
-    </p>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;">
-      <a class="btn btn-primary" href="{{ url_for('plan') }}">Plan a Trip</a>
-      <a class="btn btn-primary" href="{{ url_for('dashboard') }}">Open Dashboard</a>
-      <a class="btn" style="background:#e2e8f0;color:#0f172a" href="{{ url_for('recent') }}">Recent</a>
+  <style>
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: #f4f6fb;
+    }
+
+    /* TOP BLUE BAR */
+    .topbar {
+      background: #1976d2;
+      padding: 12px 24px;
+      color: #ffffff;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .brand {
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .nav-right a {
+      color: #ffffff;
+      text-decoration: none;
+      margin-left: 18px;
+      font-size: 14px;
+      opacity: 0.9;
+    }
+    .nav-right a.active {
+      font-weight: 600;
+      text-decoration: underline;
+      opacity: 1;
+    }
+
+    /* PAGE WRAPPER */
+    .page {
+      max-width: 960px;
+      margin: 40px auto 80px auto;
+      padding: 0 16px;
+    }
+
+    /* FLASH MESSAGES */
+    .flash {
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      margin-bottom: 14px;
+    }
+    .flash-ok {
+      background: #e8f5e9;
+      border: 1px solid #a5d6a7;
+      color: #1b5e20;
+    }
+    .flash-error {
+      background: #ffebee;
+      border: 1px solid #ef9a9a;
+      color: #b71c1c;
+    }
+
+    /* HERO CARD */
+    .hero {
+      background: #ffffff;
+      border-radius: 16px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+      padding: 32px 36px;
+      display: flex;
+      gap: 30px;
+      align-items: center;
+    }
+    .hero-img {
+      width: 300px;
+      border-radius: 12px;
+      animation: float 4s ease-in-out infinite;
+    }
+    @keyframes float {
+      0%   { transform: translateY(0); }
+      50%  { transform: translateY(-6px); }
+      100% { transform: translateY(0); }
+    }
+    .hero-right {
+      flex: 1;
+    }
+    .hero-title {
+      font-size: 28px;
+      font-weight: 700;
+      margin: 0 0 18px 0;
+      color: #111827;
+    }
+
+    /* FORM INSIDE HERO */
+    label {
+      font-size: 13px;
+      margin-bottom: 4px;
+      display: block;
+      color: #374151;
+    }
+    input {
+      width: 100%;
+      padding: 9px;
+      border-radius: 6px;
+      border: 1px solid #cbd5e1;
+      margin-bottom: 10px;
+      font-size: 14px;
+      box-sizing: border-box;
+    }
+    .btn-auth {
+      width: 100%;
+      padding: 10px;
+      border-radius: 6px;
+      border: none;
+      background: #1976d2;
+      color: #ffffff;
+      font-size: 15px;
+      cursor: pointer;
+      margin-top: 4px;
+    }
+    .switch {
+      text-align: center;
+      margin-top: 10px;
+      font-size: 13px;
+      color: #1976d2;
+      cursor: pointer;
+    }
+
+    /* FOOTER BLUE BAR */
+    footer {
+      background: #1976d2;
+      color: #ffffff;
+      text-align: center;
+      padding: 14px;
+      font-size: 14px;
+      position: fixed;
+      left: 0;
+      bottom: 0;
+      width: 100%;
+    }
+
+    @media (max-width: 768px) {
+      .hero {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .hero-img {
+        width: 240px;
+        align-self: center;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- TOP NAV -->
+  <div class="topbar">
+    <div class="brand">🚦 Transport Delay</div>
+    <div class="nav-right">
+      <a href="{{ url_for('home') }}" class="active">Home</a>
+
+      {% if 'user' in session %}
+        <a href="{{ url_for('plan') }}">Plan Trip</a>
+        <a href="{{ url_for('dashboard') }}">Dashboard</a>
+        <a href="{{ url_for('recent') }}">Recent</a>
+        <a href="{{ url_for('about') }}">About</a>
+        <a href="{{ url_for('logout') }}">Logout</a>
+      {% else %}
+        <a href="{{ url_for('about') }}">About</a>
+        <a href="#auth">Login / Create Account</a>
+      {% endif %}
     </div>
+  </div>
 
-    <!-- Quick try chips -->
-    <div style="margin-top:18px;">
-      <div style="color:#64748b;font-size:13px;margin-bottom:6px;">Try a quick route:</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="chip" onclick="quickPlan('Majestic, Bengaluru','Indiranagar, Bengaluru')">Majestic → Indiranagar</button>
-        <button class="chip" onclick="quickPlan('Silk Board, Bengaluru','KR Puram, Bengaluru')">Silk Board → KR Puram</button>
-        <button class="chip" onclick="quickPlan('Mysuru Junction','Mandya Bus Stand')">Mysuru Jn → Mandya</button>
-        <button class="chip" onclick="quickPlan('Hebbal, Bengaluru','Yeshwanthpur, Bengaluru')">Hebbal → Yeshwanthpur</button>
+  <div class="page">
+
+    <!-- FLASH MESSAGES -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="flash {% if category == 'ok' %}flash-ok{% else %}flash-error{% endif %}">
+            {{ message }}
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <!-- HERO WITH LOGIN / SIGNUP -->
+    <div class="hero" id="auth">
+      <img src="{{ url_for('static', filename='hero.png') }}"
+           alt="Public transport navigation"
+           class="hero-img">
+
+      <div class="hero-right">
+        <h1 class="hero-title">Public Transport Delay Prediction</h1>
+
+        {% if 'user' not in session %}
+          <!-- LOGIN BOX (default) -->
+          <div id="loginBox">
+            <form method="post" action="{{ url_for('login') }}">
+              <label>Email</label>
+              <input type="email" name="email" required>
+
+              <label>Password</label>
+              <input type="password" name="password" required>
+
+              <button type="submit" class="btn-auth">Login</button>
+            </form>
+            <div class="switch" id="showSignup">Don't have an account? Create one</div>
+          </div>
+
+          <!-- SIGNUP BOX (hidden initially) -->
+          <div id="signupBox" style="display:none;">
+            <form method="post" action="{{ url_for('signup') }}">
+              <label>Full Name</label>
+              <input type="text" name="name" required>
+
+              <label>Email</label>
+              <input type="email" name="email" required>
+
+              <label>Password</label>
+              <input type="password" name="password" required>
+
+              <button type="submit" class="btn-auth">Create Account</button>
+            </form>
+            <div class="switch" id="showLogin">Already have an account? Login</div>
+          </div>
+
+        {% else %}
+          <p style="font-size: 16px; margin-bottom: 16px;">
+            Welcome, {{ session['user']['name'] }}.
+          </p>
+          <button class="btn-auth"
+                  onclick="window.location.href='{{ url_for('plan') }}'">
+            Start Planning
+          </button>
+        {% endif %}
       </div>
     </div>
   </div>
 
-  <!-- Visual -->
-  <div style="position:relative;border-radius:16px;overflow:hidden;border:1px solid #eef2ff;box-shadow:0 10px 30px rgba(2,6,23,.08);">
-    <img
-      src="https://images.unsplash.com/photo-1548359638-82d4d8cf9d44?q=80&w=1200&auto=format&fit=crop"
-      alt="City transport"
-      style="width:100%;height:100%;object-fit:cover;">
-    <div style="position:absolute;left:12px;bottom:12px;background:rgba(15,23,42,.6);color:#fff;padding:10px 12px;border-radius:12px;">
-      Bengaluru-first geocoding · Karnataka only
-    </div>
-  </div>
-</div>
+  <!-- FOOTER -->
+  <footer>
+    © 2025 | Developed by Your Name | Transport Delay Prediction System
+  </footer>
 
-<!-- FEATURES -->
-<div style="max-width:1200px;margin:28px auto 0;display:grid;grid-template-columns:repeat(3,1fr);gap:16px;">
-  <div class="card">
-    <div class="card-title">Only available modes</div>
-    <p style="color:#475569;margin:8px 0 0;">
-      We auto-filter Bus/Metro/Train based on route feasibility and station proximity.
-      If nothing direct exists, you’ll see a friendly hint to try a nearby hub.
-    </p>
-  </div>
-  <div class="card">
-    <div class="card-title">Smart Suggestions</div>
-    <p style="color:#475569;margin:8px 0 0;">
-      If the trip is short or faster by foot, we suggest <b>Walk</b>. If a nearby
-      road route saves time (or no PT is found), we suggest <b>Cab</b>—as cards on the result page.
-    </p>
-  </div>
-  <div class="card">
-    <div class="card-title">Dashboard insights</div>
-    <p style="color:#475569;margin:8px 0 0;">
-      Your predictions power the dashboard—see average times, delays and mode share,
-      filter by date range and modes for clarity.
-    </p>
-  </div>
-</div>
+  <script>
+    // Toggle between Login and Signup inside hero
+    const loginBox = document.getElementById("loginBox");
+    const signupBox = document.getElementById("signupBox");
+    const showSignup = document.getElementById("showSignup");
+    const showLogin = document.getElementById("showLogin");
 
-<style>
-  .card{
-    background:#fff;border-radius:16px;padding:16px 18px 18px;
-    box-shadow:0 12px 28px rgba(2,6,23,.07), 0 2px 8px rgba(2,6,23,.05);
-    border:1px solid #eef2ff;
-  }
-  .card-title{font-weight:600;color:#0f172a}
-  .chip{
-    border:1px solid #c7d2fe;background:#eef2ff;color:#1e3a8a;
-    padding:8px 12px;border-radius:999px;cursor:pointer;font-size:13px;
-  }
-  @media (max-width: 980px){
-    .card-grid{grid-template-columns:1fr}
-  }
-</style>
+    if (showSignup) {
+      showSignup.onclick = () => {
+        loginBox.style.display = "none";
+        signupBox.style.display = "block";
+      };
+    }
+    if (showLogin) {
+      showLogin.onclick = () => {
+        signupBox.style.display = "none";
+        loginBox.style.display = "block";
+      };
+    }
+  </script>
 
-<script>
-  // Prefill plan form via localStorage and go to /plan
-  function quickPlan(src, dst){
-    localStorage.setItem('plan_source', src);
-    localStorage.setItem('plan_destination', dst);
-    // keep previously set date/hour if user has them, or leave blank
-    window.location.href = "{{ url_for('plan') }}";
-  }
-</script>
-
-{% endblock %}
+</body>
+</html>

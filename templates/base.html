@@ -1,43 +1,135 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="theme-color" content="#007BFF"/>
   <title>{{ title or "Transport Delay Prediction" }}</title>
+
+  <!-- Base styles -->
   <style>
-    body { margin:0; font-family:'Poppins',sans-serif; background:#f5f7fa; }
-    nav {
-      background:#007BFF; color:white;
-      display:flex; justify-content:space-between; align-items:center;
-      padding:15px 50px;
+    :root{
+      --brand:#007BFF;
+      --brand-700:#2563eb;
+      --ink:#0f172a;
+      --muted:#475569;
+      --bg:#f5f7fa;
+      --card:#ffffff;
+      --ring:#e5e7eb;
+      --ring-2:#cfd6e4;
+      --hover:#FFD43B;
     }
-    nav .logo { font-weight:600; font-size:20px; }
-    nav ul { list-style:none; display:flex; margin:0; padding:0; }
-    nav ul li { margin-left:25px; }
-    nav ul li a { color:white; text-decoration:none; font-weight:500; transition:0.3s; }
-    nav ul li a:hover { color:#FFD43B; }
-    footer { text-align:center; padding:15px; background:#007BFF; color:white; margin-top:40px; }
-    .content { padding:30px; }
-    .btn{padding:10px 14px;border:none;border-radius:10px;cursor:pointer}
-    .btn-primary{background:#2563eb;color:#fff;box-shadow:0 4px 14px rgba(37,99,235,.25)}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:'Poppins',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+
+    /* NAVBAR */
+    nav{
+      background:var(--brand);color:#fff;
+      display:flex;align-items:center;justify-content:space-between;
+      padding:12px 18px;position:sticky;top:0;z-index:50;
+    }
+    .logo{font-weight:700;font-size:18px;display:flex;align-items:center;gap:8px}
+    .nav-links{list-style:none;display:flex;gap:18px;margin:0;padding:0;align-items:center}
+    .nav-links a{
+      color:#fff;text-decoration:none;font-weight:500;opacity:.95;transition:.2s;
+      padding:8px 10px;border-radius:8px;
+    }
+    .nav-links a:hover{color:var(--hover);background:rgba(255,255,255,.08)}
+    .nav-links a.active{background:rgba(255,255,255,.18);color:#fff}
+
+    /* Mobile nav */
+    .hamb{display:none;cursor:pointer;border:1px solid rgba(255,255,255,.4);padding:6px 10px;border-radius:8px}
+    @media (max-width:900px){
+      .nav-links{display:none;position:absolute;left:0;right:0;top:56px;background:var(--brand);
+                 padding:10px 16px;flex-direction:column;gap:8px;border-top:1px solid rgba(255,255,255,.25)}
+      .nav-links.show{display:flex}
+      .hamb{display:block}
+    }
+
+    .content{padding:26px 16px;max-width:1200px;margin:0 auto}
+
+    /* Buttons */
+    .btn{padding:10px 14px;border:none;border-radius:10px;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+    .btn-primary{background:var(--brand-700);color:#fff;box-shadow:0 4px 14px rgba(37,99,235,.25)}
+    .btn-ghost{background:#e2e8f0;color:#0f172a}
+
+    /* Cards / utilities */
+    .card{background:var(--card);border:1px solid var(--ring);border-radius:16px;box-shadow:0 2px 10px rgba(0,0,0,.06)}
+    .muted{color:var(--muted)}
+    .footer{ text-align:center;padding:16px;background:var(--brand);color:#fff;margin-top:40px }
+
+    /* Flash toasts */
+    #flash{position:fixed;right:16px;bottom:16px;z-index:9999}
+    .toast{margin-top:6px;padding:10px 12px;border-radius:10px;color:#0f172a}
+    .toast.ok{background:#d1fae5;border:1px solid #34d399}
+    .toast.error{background:#fee2e2;border:1px solid #fca5a5}
   </style>
+
+  {% block extra_head %}{% endblock %}
 </head>
 <body>
   <nav>
-    <div class="logo">🚦 Transport Delay</div>
-    <ul>
-      <li><a href="{{ url_for('home') }}">Home</a></li>
-      <li><a href="{{ url_for('plan') }}">Plan Trip (Public)</a></li>
-      <li><a href="{{ url_for('dashboard') }}">Dashboard</a></li>
-      <li><a href="{{ url_for('recent') }}">Recent</a></li>
-      <li><a href="{{ url_for('about') }}">About</a></li>
+    <div class="logo">🚦 <span>Transport Delay</span></div>
+
+    <button class="hamb" id="hamb">☰</button>
+
+    <ul class="nav-links" id="navLinks">
+      <li><a href="{{ url_for('home') }}"       data-path="/">Home</a></li>
+      <li><a href="{{ url_for('plan') }}"       data-path="/plan">Plan Trip</a></li>
+      <li><a href="{{ url_for('dashboard') }}"  data-path="/dashboard">Dashboard</a></li>
+      <li><a href="{{ url_for('recent') }}"     data-path="/recent">Recent</a></li>
+      <li><a href="{{ url_for('about') }}"      data-path="/about">About</a></li>
+
+      {% if session.get('user') %}
+        <li style="margin-left:6px;opacity:.95;">👋 {{ session['user']['name'] }}</li>
+        <li><a href="{{ url_for('logout') }}">Logout</a></li>
+      {% else %}
+        <li><a href="{{ url_for('home') }}#auth">Login / Sign up</a></li>
+      {% endif %}
     </ul>
   </nav>
 
-  <div class="content">{% block content %}{% endblock %}</div>
+  <div class="content">
+    {% block content %}{% endblock %}
+  </div>
 
-  <footer>
+  <footer class="footer">
     &copy; {{ current_year or "2025" }} | Developed by Your Name | Transport Delay Prediction System
   </footer>
+
+  <!-- Flash toasts -->
+  {% with msgs = get_flashed_messages(with_categories=true) %}
+    {% if msgs %}
+      <div id="flash">
+        {% for cat,msg in msgs %}
+          <div class="toast {{ cat }}">{{ msg }}</div>
+        {% endfor %}
+      </div>
+      <script>setTimeout(()=>{const f=document.getElementById('flash'); if(f) f.remove();}, 3000);</script>
+    {% endif %}
+  {% endwith %}
+
+  <!-- Small helpers: mobile toggle + active link -->
+  <script>
+    // Mobile menu toggle
+    (function(){
+      const btn = document.getElementById('hamb');
+      const nav = document.getElementById('navLinks');
+      if(btn && nav){ btn.addEventListener('click',()=>nav.classList.toggle('show')); }
+    })();
+
+    // Highlight active link by path prefix
+    (function(){
+      const here = location.pathname.toLowerCase();
+      document.querySelectorAll('#navLinks a[data-path]').forEach(a=>{
+        const p = a.getAttribute('data-path').toLowerCase();
+        // mark active if exact "/" OR path starts with configured prefix
+        const active = (p === '/' && here === '/') || (p !== '/' && here.startsWith(p));
+        if(active) a.classList.add('active');
+      });
+    })();
+  </script>
+
+  {% block extra_scripts %}{% endblock %}
 </body>
 </html>

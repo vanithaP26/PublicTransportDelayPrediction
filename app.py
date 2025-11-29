@@ -1,14 +1,19 @@
 # app.py — Karnataka coverage, Bengaluru-first geocoding, strict PT availability,
-# fast short suggestions (A2, max 6), separate Public/Cab/Walk features,
+# fast short suggestions (A2, max 6), Public PT with smart Walk/Cab hints,
+# optional separate Cab/Walk features, Login/Signup (SQLite, hashed),
 # always-save history (even "no direct PT"), and interactive dashboard.
 
 import os, json, pickle, pathlib, sqlite3
 from datetime import datetime
 from collections import defaultdict
-from flask import Flask, render_template, request, redirect, url_for, jsonify
+from flask import (
+    Flask, render_template, request, redirect, url_for,
+    jsonify, session, flash
+)
 import requests
 from geopy.distance import geodesic
 from dotenv import load_dotenv
+from werkzeug.security import generate_password_hash, check_password_hash
 
 load_dotenv()
 
@@ -16,6 +21,7 @@ TOMTOM_KEY = os.getenv("TOMTOM_API_KEY", "").strip()
 MODEL_PATH = "models/transport_delay_model.pkl"
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
+app.secret_key = os.getenv("FLASK_SECRET_KEY", "dev-secret-change-me")
 
 # ------------ Data dir / DB ------------
 APP_DIR = pathlib.Path(__file__).resolve().parent
@@ -47,6 +53,20 @@ def ensure_feature_column():
             cur.execute("ALTER TABLE searches ADD COLUMN feature TEXT DEFAULT 'public'")
             con.commit()
 ensure_feature_column()
+
+def init_users_table():
+    with sqlite3.connect(DB_PATH) as con:
+        cur = con.cursor()
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            email TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )""")
+        con.commit()
+init_users_table()
 
 # ------------ Optional ML model ------------
 model = None
@@ -297,6 +317,73 @@ def suggest():
         print("suggest error:", e)
         return jsonify([])
 
+# ------------ Auth (Signup/Login/Logout) ------------
+@app.post("/signup")
+def signup():
+    name = (request.form.get("name") or "").strip()
+    email = (request.form.get("email") or "").strip().lower()
+    password = (request.form.get("password") or "").strip()
+
+    if not name or not email or not password:
+        flash("Please fill all fields.", "error")
+        return redirect(url_for("home") + "#auth")
+
+    pw_hash = generate_password_hash(password)
+    try:
+        with sqlite3.connect(DB_PATH) as con:
+            cur = con.cursor()
+            cur.execute(
+                "INSERT INTO users (name, email, password_hash, created_at) VALUES (?,?,?,?)",
+                (name, email, pw_hash, datetime.now().isoformat(timespec="seconds"))
+            )
+            con.commit()
+            uid = cur.lastrowid
+        session["user"] = {"id": uid, "name": name, "email": email}
+        flash("Account created. You are now logged in.", "ok")
+    except sqlite3.IntegrityError:
+        flash("That email is already registered.", "error")
+    except Exception as e:
+        print("signup error:", e)
+        flash("Something went wrong. Please try again.", "error")
+
+    return redirect(url_for("home") + "#auth")
+
+@app.post("/login")
+def login():
+    email = (request.form.get("email") or "").strip().lower()
+    password = (request.form.get("password") or "").strip()
+    if not email or not password:
+        flash("Please enter email and password.", "error")
+        return redirect(url_for("home") + "#auth")
+
+    try:
+        with sqlite3.connect(DB_PATH) as con:
+            cur = con.cursor()
+            cur.execute("SELECT id, name, email, password_hash FROM users WHERE email=?", (email,))
+            row = cur.fetchone()
+        if not row:
+            flash("No account found for that email.", "error")
+            return redirect(url_for("home") + "#auth")
+
+        uid, name, email_db, pw_hash = row
+        if not check_password_hash(pw_hash, password):
+            flash("Incorrect password.", "error")
+            return redirect(url_for("home") + "#auth")
+
+        session["user"] = {"id": uid, "name": name, "email": email_db}
+        flash("Welcome back!", "ok")
+    except Exception as e:
+        print("login error:", e)
+        flash("Something went wrong. Please try again.", "error")
+
+    return redirect(url_for("home") + "#auth")
+
+@app.get("/logout")
+def logout():
+    session.pop("user", None)
+    flash("You have been logged out.", "ok")
+    return redirect(url_for("home") + "#auth")
+
 # ------------ Pages ------------
 @app.route("/")
 def home():
@@ -310,7 +397,7 @@ def plan():
 def about():
     return render_template("about.html")
 
-# ------------ Public PT predict (separate page result) ------------
+# ------------ Public PT predict (separate page result + smart suggestions) ------------
 @app.route("/predict", methods=["POST"])
 def predict():
     source = (request.form.get("source") or "").strip()
@@ -483,7 +570,7 @@ def predict():
         suggestions=json.dumps(suggestions)  # <— pass to template
     )
 
-# ------------ Cab (separate feature) ------------
+# ------------ Cab (optional separate feature) ------------
 @app.route("/cab")
 def cab():
     return render_template("cab.html")
@@ -576,8 +663,8 @@ def cab_predict():
         no_modes_msg=no_modes_msg
     )
 
-# ------------ Walk (separate feature, 4.5 km/h) ------------
-WALK_SPEED_KMPH = 4.5  # as chosen (B)
+# ------------ Walk (optional separate feature, 4.5 km/h) ------------
+WALK_SPEED_KMPH = 4.5  # chosen
 
 @app.route("/walk")
 def walk():
@@ -605,22 +692,21 @@ def walk_predict():
         return f"<h3 style='color:#b00020'>{geo_err}</h3>"
 
     straight_km = geodesic(src_ll, dst_ll).km
-    # approximate path factor 1.35 (walkways/blocks), cap at some reasonable
-    path_km = min(straight_km * 1.35, 50.0)
+    path_km = min(straight_km * 1.35, 50.0)  # approximate path factor
     base_time_min = (path_km / WALK_SPEED_KMPH) * 60.0
 
     weather = get_live_weather(*src_ll)
-    base_tr = base_traffic_index(*src_ll)  # traffic has little effect, but keep for model interface
+    base_tr = base_traffic_index(*src_ll)  # minimal impact
 
     feats = {
         "distance_km": path_km,
-        "traffic_index": base_tr * 0.1,  # very low impact on walk
+        "traffic_index": base_tr * 0.1,
         "rain_mm": weather["rain_mm"],
         "humidity_pct": weather["humidity_pct"],
         "temperature_c": weather["temperature_c"],
         "mode": "Walk"
     }
-    delay_min = round(predict_delay_minutes(feats) * 0.2, 2)  # walking delay far lower
+    delay_min = round(predict_delay_minutes(feats) * 0.2, 2)
     total_time = round(max(base_time_min + delay_min, 1.0), 2)
 
     rows = [{
@@ -646,7 +732,7 @@ def walk_predict():
     map_payload = {
         "src": {"lat": src_ll[0], "lon": src_ll[1], "label": f"Source: {source}"},
         "dst": {"lat": dst_ll[0], "lon": dst_ll[1], "label": f"Destination: {destination}"},
-        "road_polyline": []  # walking line not routed; we draw straight segment on map
+        "road_polyline": []  # draw straight segment on map
     }
 
     return render_template(
@@ -715,8 +801,6 @@ def dashboard():
             rows = json.loads(modes_json)
         except Exception:
             rows = []
-        # you can skip empty rows if you don't want "no modes" attempts in charts
-        # if not rows: continue
         for r in rows:
             m = r.get("mode")
             if not m: continue
