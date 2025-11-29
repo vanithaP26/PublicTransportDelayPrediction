@@ -1,7 +1,5 @@
-# app.py — Karnataka coverage, Bengaluru-first geocoding, strict PT availability,
-# fast short suggestions (A2, max 6), Public PT with smart Walk/Cab hints,
-# optional separate Cab/Walk features, Login/Signup (SQLite, hashed),
-# always-save history (even "no direct PT"), and interactive dashboard.
+# app.py — Karnataka coverage, Bengaluru-first geocoding, Public PT only (Bus/Metro/Train),
+# Login/Signup (SQLite, hashed), always-save history, and interactive dashboard.
 
 import os, json, pickle, pathlib, sqlite3
 from datetime import datetime
@@ -157,7 +155,7 @@ def geocode_pair(src_text: str, dst_text: str):
                                 "Please add city/district names for clarity.")
     return s_ll, d_ll, None
 
-# ------------ TomTom routing (for Bus/Cab road path) ------------
+# ------------ TomTom routing (for Bus road path) ------------
 def tomtom_route(src_ll, dst_ll):
     if not TOMTOM_KEY:
         return None, "TomTom API key missing."
@@ -276,28 +274,46 @@ def traffic_for_mode(base_idx, mode):
     return base_idx
 
 def predict_delay_minutes(features):
+    """
+    Predict delay minutes.
+    - If ML model is available: take model prediction and multiply by a mode factor
+      so Bus > Train > Metro for same route.
+    - If no model: simple heuristic formula using distance & traffic.
+    """
     dist = max(features.get("distance_km", 0.0), 0.0)
     traffic = max(features.get("traffic_index", 0.0), 0.0)
     rain = max(features.get("rain_mm", 0.0), 0.0)
     mode = features.get("mode", "Bus")
-    # heuristic if model missing
-    mode_factor = {"Bus": 6.0, "Metro": 3.0, "Train": 3.5, "Cab": 6.0, "Walk": 1.0}.get(mode, 5.0)
-    delay = dist * (traffic / 30.0) * (1.0 + min(rain, 20.0) / 50.0) * mode_factor
+
+    mode_factor = {
+        "Bus": 1.2,
+        "Metro": 0.7,
+        "Train": 0.8,
+    }.get(mode, 1.0)
+
+    # If ML model exists: use it, then scale for each mode
     if model:
         try:
             X = [[
-                dist, traffic, rain,
+                dist,
+                traffic,
+                rain,
                 features.get("humidity_pct", 0.0),
                 features.get("temperature_c", 0.0),
-                {"Bus": 1, "Metro": 2, "Train": 3, "Cab": 4, "Walk": 5}.get(mode, 0)
+                {"Bus": 1, "Metro": 2, "Train": 3}.get(mode, 0)
             ]]
-            pred = float(model.predict(X)[0])
-            return max(pred, 0.0)
+            base_pred = float(model.predict(X)[0])
+            return max(base_pred * mode_factor, 0.0)
         except Exception as e:
             print("Model predict error:", e)
+
+    # Simple fallback heuristic (if no model or model failed)
+    base = (dist * traffic) / 200.0  # tuned for reasonable values
+    weather_factor = 1.0 + min(rain, 20.0) / 100.0
+    delay = base * weather_factor * mode_factor
     return max(delay, 0.0)
 
-# ------------ Live suggestions (fast & short) ------------
+# ------------ Live suggestions (fast & short, no Cab/Walk) ------------
 @app.route("/suggest")
 def suggest():
     q = (request.args.get("q") or "").strip()
@@ -427,7 +443,7 @@ def plan():
 def about():
     return render_template("about.html")
 
-# ------------ Public PT predict (separate page result + smart suggestions) ------------
+# ------------ Public PT predict (separate page result) ------------
 @app.route("/predict", methods=["POST"])
 def predict():
     source = (request.form.get("source") or "").strip()
@@ -450,7 +466,7 @@ def predict():
             print("History insert (geocode_err) error:", e)
         return f"<h3 style='color:#b00020'>{geo_err}</h3>"
 
-    # Road route (for Bus distance/time; also helps Cab suggestion)
+    # Road route (for Bus distance/time)
     route_data, route_err = tomtom_route(src_ll, dst_ll)
     road_km = None; road_poly = []; bus_time_min = None
     if not route_err and route_data:
@@ -530,57 +546,8 @@ def predict():
     except Exception as e:
         print("History insert error:", e)
 
-    # ---------- SMART SUGGESTIONS (inline cards) ----------
+    # No Cab / Walk suggestions anymore
     suggestions = []
-
-    # Walk suggestion (assume path factor 1.35 & speed 4.5 km/h)
-    path_km = straight_km * 1.35
-    walk_time_min = (path_km / 4.5) * 60.0
-    # Rule: suggest walk if short OR clearly competitive
-    min_public_time = min([r["total_time_min"] for r in rows], default=float("inf"))
-    if path_km <= 2.5 or walk_time_min <= (min_public_time * 0.8):
-        # walking delay very low impact
-        feats_walk = {
-            "distance_km": path_km,
-            "traffic_index": base_tr * 0.1,
-            "rain_mm": weather["rain_mm"],
-            "humidity_pct": weather["humidity_pct"],
-            "temperature_c": weather["temperature_c"],
-            "mode": "Walk"
-        }
-        walk_delay = round(predict_delay_minutes(feats_walk) * 0.2, 2)
-        walk_total = round(max(walk_time_min + walk_delay, 1.0), 2)
-        suggestions.append({
-            "type": "Walk",
-            "title": "Walkable distance",
-            "detail": f"~{round(path_km,2)} km · ~{round(walk_total)} min",
-            "note": "Good option for nearby places."
-        })
-
-    # Cab suggestion (if near & faster or when no PT)
-    if road_km is not None:
-        cab_time_min = bus_time_min if bus_time_min is not None else (road_km / 28.0) * 60.0
-        feats_cab = {
-            "distance_km": road_km,
-            "traffic_index": base_tr,
-            "rain_mm": weather["rain_mm"],
-            "humidity_pct": weather["humidity_pct"],
-            "temperature_c": weather["temperature_c"],
-            "mode": "Cab"
-        }
-        cab_delay = round(predict_delay_minutes(feats_cab), 2)
-        cab_total = round(max(cab_time_min + cab_delay, 1.0), 2)
-        cab_fare  = round(40 + 14.0 * road_km + 0.5 * cab_delay, 2)
-
-        faster_than_public = cab_total < (min_public_time * 0.85 if min_public_time != float("inf") else cab_total)
-        near_distance = road_km <= 20
-        if (near_distance and faster_than_public) or not rows:  # show if faster OR no PT
-            suggestions.append({
-                "type": "Cab",
-                "title": "Nearby — Cab could save time",
-                "detail": f"{road_km} km · ETA ~{round(cab_total)} min",
-                "note": f"Est. fare ₹{cab_fare}"
-            })
 
     # ---------- Map payload ----------
     map_payload = {
@@ -601,182 +568,7 @@ def predict():
         map_payload=json.dumps(map_payload),
         distance_km=display_km,
         no_modes_msg=no_modes_msg,
-        suggestions=json.dumps(suggestions)  # <— pass to template
-    )
-
-# ------------ Cab (optional separate feature) ------------
-@app.route("/cab")
-def cab():
-    return render_template("cab.html")
-
-@app.route("/cab_predict", methods=["POST"])
-def cab_predict():
-    source = (request.form.get("source") or "").strip()
-    destination = (request.form.get("destination") or "").strip()
-    if not source or not destination:
-        return "<h3 style='color:#b00020'>Please enter both Source and Destination.</h3>"
-
-    src_ll, dst_ll, geo_err = geocode_pair(source, destination)
-    if geo_err:
-        try:
-            with sqlite3.connect(DB_PATH) as con:
-                con.execute(
-                    "INSERT INTO searches (ts, source, destination, road_km, modes_json, feature) VALUES (?,?,?,?,?,?)",
-                    (datetime.now().isoformat(timespec="seconds"),
-                     source, destination, 0.0, json.dumps([]), "cab")
-                )
-                con.commit()
-        except Exception as e:
-            print("History insert (cab geocode_err):", e)
-        return f"<h3 style='color:#b00020'>{geo_err}</h3>"
-
-    route_data, route_err = tomtom_route(src_ll, dst_ll)
-    road_km = None; road_poly = []; base_time_min = None
-    if not route_err and route_data:
-        road_km = route_data["distance_km"]
-        road_poly = route_data["coords"]
-        base_time_min = route_data["duration_min"]
-
-    straight_km = round(geodesic(src_ll, dst_ll).km, 2)
-    display_km = road_km if road_km is not None else straight_km
-
-    weather = get_live_weather(*src_ll)
-    base_tr = base_traffic_index(*src_ll)
-
-    rows = []
-    if road_km is not None and base_time_min is not None:
-        mode = "Cab"
-        tr_idx = base_tr
-        feats = {
-            "distance_km": road_km,
-            "traffic_index": tr_idx,
-            "rain_mm": weather["rain_mm"],
-            "humidity_pct": weather["humidity_pct"],
-            "temperature_c": weather["temperature_c"],
-            "mode": mode
-        }
-        delay_min = round(predict_delay_minutes(feats), 2)
-        total_time = round(max(base_time_min + delay_min, 1.0), 2)
-        fare = round(40 + 14.0 * road_km + 0.5 * delay_min, 2)
-        delay_note = "No significant delay" if delay_min < 3 else f"~{delay_min} min delay"
-
-        rows.append({
-            "mode": mode,
-            "traffic_index": tr_idx,
-            "predicted_delay": delay_min,
-            "total_time_min": total_time,
-            "fare": fare,
-            "delay_note": delay_note
-        })
-
-    try:
-        with sqlite3.connect(DB_PATH) as con:
-            con.execute(
-                "INSERT INTO searches (ts, source, destination, road_km, modes_json, feature) VALUES (?,?,?,?,?,?)",
-                (datetime.now().isoformat(timespec="seconds"),
-                 source, destination, road_km or 0.0, json.dumps(rows), "cab")
-            )
-            con.commit()
-    except Exception as e:
-        print("History insert (cab):", e)
-
-    map_payload = {
-        "src": {"lat": src_ll[0], "lon": src_ll[1], "label": f"Source: {source}"},
-        "dst": {"lat": dst_ll[0], "lon": dst_ll[1], "label": f"Destination: {destination}"},
-        "road_polyline": road_poly
-    }
-
-    no_modes_msg = None if rows else "No road route found for Cab. Try a nearby landmark."
-    return render_template(
-        "result.html",
-        feature="cab",
-        source=source, destination=destination,
-        weather=weather, rows=rows,
-        map_payload=json.dumps(map_payload),
-        distance_km=display_km,
-        no_modes_msg=no_modes_msg
-    )
-
-# ------------ Walk (optional separate feature, 4.5 km/h) ------------
-WALK_SPEED_KMPH = 4.5  # chosen
-
-@app.route("/walk")
-def walk():
-    return render_template("walk.html")
-
-@app.route("/walk_predict", methods=["POST"])
-def walk_predict():
-    source = (request.form.get("source") or "").strip()
-    destination = (request.form.get("destination") or "").strip()
-    if not source or not destination:
-        return "<h3 style='color:#b00020'>Please enter both Source and Destination.</h3>"
-
-    src_ll, dst_ll, geo_err = geocode_pair(source, destination)
-    if geo_err:
-        try:
-            with sqlite3.connect(DB_PATH) as con:
-                con.execute(
-                    "INSERT INTO searches (ts, source, destination, road_km, modes_json, feature) VALUES (?,?,?,?,?,?)",
-                    (datetime.now().isoformat(timespec="seconds"),
-                     source, destination, 0.0, json.dumps([]), "walk")
-                )
-                con.commit()
-        except Exception as e:
-            print("History insert (walk geocode_err):", e)
-        return f"<h3 style='color:#b00020'>{geo_err}</h3>"
-
-    straight_km = geodesic(src_ll, dst_ll).km
-    path_km = min(straight_km * 1.35, 50.0)  # approximate path factor
-    base_time_min = (path_km / WALK_SPEED_KMPH) * 60.0
-
-    weather = get_live_weather(*src_ll)
-    base_tr = base_traffic_index(*src_ll)  # minimal impact
-
-    feats = {
-        "distance_km": path_km,
-        "traffic_index": base_tr * 0.1,
-        "rain_mm": weather["rain_mm"],
-        "humidity_pct": weather["humidity_pct"],
-        "temperature_c": weather["temperature_c"],
-        "mode": "Walk"
-    }
-    delay_min = round(predict_delay_minutes(feats) * 0.2, 2)
-    total_time = round(max(base_time_min + delay_min, 1.0), 2)
-
-    rows = [{
-        "mode": "Walk",
-        "traffic_index": feats["traffic_index"],
-        "predicted_delay": delay_min,
-        "total_time_min": total_time,
-        "fare": 0.0,
-        "delay_note": "Walk time varies by signals & footpaths"
-    }]
-
-    try:
-        with sqlite3.connect(DB_PATH) as con:
-            con.execute(
-                "INSERT INTO searches (ts, source, destination, road_km, modes_json, feature) VALUES (?,?,?,?,?,?)",
-                (datetime.now().isoformat(timespec="seconds"),
-                 source, destination, path_km, json.dumps(rows), "walk")
-            )
-            con.commit()
-    except Exception as e:
-        print("History insert (walk):", e)
-
-    map_payload = {
-        "src": {"lat": src_ll[0], "lon": src_ll[1], "label": f"Source: {source}"},
-        "dst": {"lat": dst_ll[0], "lon": dst_ll[1], "label": f"Destination: {destination}"},
-        "road_polyline": []  # draw straight segment on map
-    }
-
-    return render_template(
-        "result.html",
-        feature="walk",
-        source=source, destination=destination,
-        weather=weather, rows=rows,
-        map_payload=json.dumps(map_payload),
-        distance_km=round(path_km, 2),
-        no_modes_msg=None
+        suggestions=json.dumps(suggestions)  # will be [] now
     )
 
 # ------------ Recent (with feature, delete/clear) ------------
@@ -807,7 +599,7 @@ def recent_clear():
 # ------------ Dashboard (feature filter) ------------
 @app.route("/dashboard")
 def dashboard():
-    feature = request.args.get("feature", "public")  # 'public', 'cab', 'walk', or 'both'
+    feature = request.args.get("feature", "public")  # 'public' or 'both' (legacy)
     with sqlite3.connect(DB_PATH) as con:
         cur = con.cursor()
         if feature == "both":
