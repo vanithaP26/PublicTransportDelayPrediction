@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block content %}
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --accent:#0b63e6;
+    --muted:#64748b;
+    --card-bg:#ffffff;
+  }
+  body { font-family:"Inter"; }
+
+  .about-page {
+    max-width:900px;
+    margin:32px auto;
+    padding:18px;
+  }
+
+  h1 {
+    font-size:30px;
+    font-weight:800;
+    color:var(--accent);
+    margin-bottom:6px;
+  }
+
+  p.desc {
+    font-size:15px;
+    color:#333;
+    line-height:1.6;
+    margin-bottom:18px;
+    max-width:700px;
+  }
+
+  .section-title {
+    margin-top:22px;
+    font-size:18px;
+    font-weight:700;
+    color:#0f172a;
+  }
+
+  .tech-box {
+    background:#fff;
+    padding:16px;
+    border-radius:12px;
+    box-shadow:0 8px 20px rgba(12,20,40,0.06);
+    margin-top:10px;
+  }
+
+  .tech-pill {
+    display:inline-block;
+    padding:8px 12px;
+    margin:4px;
+    border-radius:8px;
+    background:#eef4ff;
+    font-weight:600;
+    color:var(--accent);
+    font-size:13px;
+  }
+
+  .footer-note {
+    margin-top:26px;
+    font-size:13px;
+    color:var(--muted);
+  }
+
+  .btn-primary {
+    display:inline-block;
+    margin-top:14px;
+    padding:10px 16px;
+    background:var(--accent);
+    color:#fff;
+    border-radius:10px;
+    text-decoration:none;
+    font-weight:600;
+  }
+</style>
+
+<div class="about-page">
+
+  <h1>About This Project</h1>
+
+  <p class="desc">
+    The Public Transport Delay Prediction System is a simple and intuitive platform
+    designed to estimate delays for **Bus, Metro, and Train** based on weather,
+    traffic conditions, and historical patterns.
+    It helps users plan better by providing route insights, delay estimates, and
+    an interactive dashboard for recent searches.
+  </p>
+
+  <p class="desc">
+    This project is built as a demonstration for academic purposes, focusing on
+    user-friendly design, clean data pipelines, and practical machine-learning integration.
+  </p>
+
+  <h3 class="section-title">Technologies Used</h3>
+
+  <div class="tech-box">
+    <span class="tech-pill">Python</span>
+    <span class="tech-pill">Flask</span>
+    <span class="tech-pill">SQLite</span>
+    <span class="tech-pill">Pandas</span>
+    <span class="tech-pill">NumPy</span>
+    <span class="tech-pill">scikit-learn</span>
+    <span class="tech-pill">Chart.js</span>
+    <span class="tech-pill">Leaflet Maps</span>
+    <span class="tech-pill">HTML / CSS</span>
+  </div>
+
+  <h3 class="section-title">Purpose</h3>
+  <p class="desc">
+    The goal is to provide a simple, easy-to-understand system that shows how
+    real-time data, geocoding, weather APIs, and predictive modelling come together
+    in a full working application.
+  </p>
+
+  <p class="footer-note">For demo or educational use only.</p>
+
+  <a class="btn-primary" href="{{ url_for('plan') }}">Plan a Trip</a>
+
+</div>
+{% endblock %}

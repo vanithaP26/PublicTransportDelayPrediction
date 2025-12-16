@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block content %}
+
+<style>
+  /* Hero animation */
+  @keyframes fadeUp {
+    0% { opacity: 0; transform: translateY(20px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes slowFloat {
+    0% { transform: translateY(0px); }
+    50% { transform: translateY(-12px); }
+    100% { transform: translateY(0px); }
+  }
+
+  .hero-container {
+    max-width: 1050px;
+    margin: auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    padding: 40px 20px;
+    animation: fadeUp 0.7s ease-in-out;
+  }
+
+  .hero-left {
+    flex: 1;
+    min-width: 300px;
+    padding: 20px;
+  }
+
+  .hero-title {
+    font-size: 40px;
+    font-weight: 800;
+    color: #0f3fbf;
+    line-height: 1.2;
+    margin-bottom: 14px;
+  }
+
+  .hero-sub {
+    font-size: 18px;
+    color: #475569;
+    margin-bottom: 28px;
+    max-width: 480px;
+  }
+
+  .hero-btn {
+    background: #0f3fbf;
+    padding: 12px 26px;
+    color: #fff;
+    border-radius: 8px;
+    font-size: 18px;
+    font-weight: 600;
+    border: none;
+    transition: all 0.2s ease-in-out;
+    cursor: pointer;
+  }
+  
+  .hero-btn:hover {
+    background: #0c34a3;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 14px rgba(0,0,0,0.15);
+  }
+
+  .hero-image {
+    flex: 1;
+    min-width: 300px;
+    text-align: center;
+    animation: slowFloat 4s ease-in-out infinite;
+  }
+
+  .hero-image img {
+    max-width: 90%;
+    border-radius: 16px;
+  }
+
+  /* Bottom feature cards */
+  .features {
+    max-width: 1100px;
+    margin: 40px auto 10px;
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    padding: 10px;
+  }
+
+  .card {
+    flex: 1;
+    min-width: 260px;
+    background: white;
+    border-radius: 14px;
+    padding: 20px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    transition: all 0.2s ease;
+  }
+
+  .card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+  }
+
+  .card-title {
+    font-size: 20px;
+    font-weight: 700;
+    margin-bottom: 10px;
+    color: #0f3fbf;
+  }
+
+  .card-text {
+    color: #475569;
+    font-size: 15px;
+  }
+</style>
+
+<!-- HERO SECTION -->
+<div class="hero-container">
+  
+  <div class="hero-left">
+    <div class="hero-title">
+       Public Transport  
+      <br>Delay Prediction System
+    </div>
+    
+    <div class="hero-sub">
+      Plan your journey with real-time weather, traffic insights, and accurate delay predictions powered by Machine Learning.
+    </div>
+
+    <a href="{{ url_for('login') }}">
+      <button class="hero-btn">Get Started →</button>
+    </a>
+  </div>
+
+  <div class="hero-image">
+    <img src="{{ url_for('static', filename='hero.png') }}" alt="">
+  </div>
+
+</div>
+
+<!-- FEATURE CARDS -->
+<div class="features">
+
+  <div class="card">
+    <div class="card-title">Live Traffic-Based Prediction</div>
+    <div class="card-text">
+      Uses real-time traffic congestion levels to estimate the most accurate travel delays.
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Weather-Aware Forecasting</div>
+    <div class="card-text">
+      Rain, humidity, and temperature automatically impact your delay prediction.
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Route Visualization</div>
+    <div class="card-text">
+      View your route on an interactive map with markers and travel path.
+    </div>
+  </div>
+
+</div>
+
+{% endblock %}

@@ -1,0 +1,343 @@
+{% extends "base.html" %}
+{% block content %}
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --accent: #0b63e6;
+    --muted: #64748b;
+    --card-bg: #ffffff;
+  }
+  body { font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; }
+
+  .dash { max-width:1280px; margin:20px auto; padding:18px; box-sizing:border-box; }
+  .top-row { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:14px; }
+  .title { font-size:24px; color:var(--accent); margin:0 0 4px; font-weight:800; }
+  .subtitle { color:var(--muted); font-size:13px; margin:0; }
+
+  /* KPI grid */
+  .kpis { display:grid; grid-template-columns: repeat(4,1fr); gap:14px; margin-top:12px; }
+  .kpi {
+    background:var(--card-bg);
+    border-radius:12px;
+    padding:14px;
+    box-shadow:0 8px 26px rgba(12,20,40,0.06);
+    display:flex; flex-direction:column; gap:6px;
+    transform:translateY(10px);
+    opacity:0;
+    animation:slideUp .45s ease forwards;
+  }
+  .kpi h3 { margin:0; font-size:13px; color:#0f172a; font-weight:700; }
+  .kpi .val { font-size:20px; font-weight:800; color:var(--accent); display:flex; align-items:center; gap:8px; }
+
+  @keyframes slideUp { to { transform:none; opacity:1; } }
+
+  /* main panels: left (charts) + right (recent) */
+  .panels {
+    display:grid;
+    grid-template-columns: 1fr 380px;
+    gap:16px;
+    margin-top:16px;
+    align-items:start;
+  }
+
+  .panel {
+    background:var(--card-bg);
+    border-radius:12px;
+    padding:12px;
+    box-shadow:0 10px 30px rgba(12,20,40,0.05);
+    overflow:hidden;
+  }
+  .panel h4 { margin:0 0 10px 0; font-size:15px; color:#0f172a; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+
+  /* controls */
+  .select, .small-btn {
+    padding:7px 10px; border-radius:8px; border:1px solid #e6eefb; background:#fff; font-size:13px;
+  }
+
+  /* stacked charts column */
+  .charts-col { display:flex; flex-direction:column; gap:12px; }
+  .chart-card {
+    background:#fff; border-radius:10px; padding:10px;
+    box-shadow:0 6px 18px rgba(12,20,40,0.04);
+    display:block; overflow:hidden;
+    /* use dynamic height that adapts to viewport while leaving room for headers and KPIs */
+    height: calc((100vh - 360px) / 2);
+    min-height:220px;
+  }
+  /* Keep chart canvas fully responsive inside its card */
+  .chart-card canvas { width:100% !important; height:100% !important; display:block; }
+
+  /* recent table: allow internal scroll rather than page overflow */
+  .recent-wrap { overflow:auto; max-height: calc(100vh - 220px); padding-right:6px; }
+  .recent-table { width:100%; border-collapse:collapse; margin-top:8px; font-size:14px; }
+  .recent-table th, .recent-table td { padding:8px 10px; border-bottom:1px solid #f1f5f9; text-align:left; white-space:nowrap; }
+
+  .btn { background:var(--accent); color:#fff; padding:8px 12px; border-radius:10px; text-decoration:none; display:inline-flex; align-items:center; gap:8px; font-weight:600; }
+  .btn.ghost { background:transparent; color:var(--accent); border:1px solid rgba(11,99,230,0.14); }
+
+  @media (max-width:1100px){
+    .panels { grid-template-columns: 1fr; }
+    .chart-card { height: 320px; }
+    .kpis { grid-template-columns: repeat(2,1fr); }
+  }
+</style>
+
+<div class="dash">
+  <div class="top-row">
+    <div>
+      <h1 class="title">Transport Delay — Dashboard</h1>
+      <p class="subtitle">Overview for <strong style="color:var(--accent)">{{ feature|capitalize }}</strong> searches · quick insights</p>
+    </div>
+
+    <div style="display:flex;gap:8px;align-items:center;">
+      <a class="btn" href="{{ url_for('plan') }}">Plan Trip</a>
+      <a class="btn ghost" id="downloadCsv">Export CSV</a>
+    </div>
+  </div>
+
+  <!-- KPI cards -->
+  <div class="kpis">
+    <div class="kpi" style="animation-delay:0ms;">
+      <h3>Total searches</h3>
+      <div class="val" data-count="{{ cards.total_trips|default(0) }}">0</div>
+      <div style="font-size:12px;color:var(--muted)">All recorded predictions</div>
+    </div>
+
+    <div class="kpi" style="animation-delay:60ms;">
+      <h3>Avg route (km)</h3>
+      <div class="val" data-count="{{ cards.avg_road_km|default(0) }}">0</div>
+      <div style="font-size:12px;color:var(--muted)">Average road distance</div>
+    </div>
+
+    <div class="kpi" style="animation-delay:120ms;">
+      <h3>Fastest mode</h3>
+      <div class="val" style="font-size:16px;color:#0f172a;">
+        {% if cards.fastest_mode == 'Bus' %} 🚌 Bus
+        {% elif cards.fastest_mode == 'Metro' %} 🚇 Metro
+        {% else %} 🚆 Train {% endif %}
+      </div>
+      <div style="font-size:12px;color:var(--muted)">From historical averages</div>
+    </div>
+
+    <div class="kpi" style="animation-delay:180ms;">
+      <h3>Most reliable</h3>
+      <div class="val" style="font-size:16px;color:#0f172a;">
+        {% if cards.lowest_delay_mode == 'Bus' %} 🚌 Bus
+        {% elif cards.lowest_delay_mode == 'Metro' %} 🚇 Metro
+        {% else %} 🚆 Train {% endif %}
+      </div>
+      <div style="font-size:12px;color:var(--muted)">Mode with lowest avg delay</div>
+    </div>
+  </div>
+
+  <!-- main panels -->
+  <div class="panels">
+    <!-- left: stacked charts -->
+    <div class="panel">
+      <h4>
+        Insights
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="modeFilter" class="select" title="Filter by mode">
+            <option value="">All modes</option>
+            <option value="Bus">🚌 Bus</option>
+            <option value="Metro">🚇 Metro</option>
+            <option value="Train">🚆 Train</option>
+          </select>
+
+          <select id="showLast" class="select" title="Show last N entries">
+            <option value="10">Last 10</option>
+            <option value="20" selected>Last 20</option>
+            <option value="50">Last 50</option>
+          </select>
+        </div>
+      </h4>
+
+      <div class="charts-col">
+        <div class="chart-card">
+          <canvas id="modeDonut"></canvas>
+        </div>
+
+        <div class="chart-card">
+          <canvas id="timeDelayChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- right: recent -->
+    <div class="panel">
+      <h4>Recent trips</h4>
+
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <input id="searchBox" placeholder="Search source / dest" style="flex:1;padding:8px;border-radius:8px;border:1px solid #eef2ff;">
+        <a class="btn ghost" id="viewAll" href="{{ url_for('recent') }}">View all</a>
+      </div>
+
+      <div class="recent-wrap">
+        <table class="recent-table" id="recentTable" aria-live="polite">
+          <thead>
+            <tr><th style="width:32px">#</th><th>Date</th><th>Route</th><th>Mode</th><th style="text-align:right">Delay (min)</th></tr>
+          </thead>
+          <tbody id="recentBody">
+            {% if recent_rows %}
+              {% for r in recent_rows[:20] %}
+              <tr data-mode="{{ r.mode }}" data-src="{{ r.source|lower }}" data-dst="{{ r.destination|lower }}">
+                <td>{{ loop.index }}</td>
+                <td style="white-space:nowrap;">{{ (r.ts[:10] if r.ts) or '' }}</td>
+                <td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.source }} → {{ r.destination }}</td>
+                <td>
+                  {% if r.mode == 'Bus' %} 🚌 Bus
+                  {% elif r.mode == 'Metro' %} 🚇 Metro
+                  {% else %} 🚆 Train {% endif %}
+                </td>
+                <td style="text-align:right;">{{ (r.delay|round(2)) if r.delay is not none else '-' }}</td>
+              </tr>
+              {% endfor %}
+            {% else %}
+              <tr><td colspan="5" style="padding:12px;color:var(--muted)">No recent trips yet.</td></tr>
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+
+<script>
+/* ---------- Data from server ---------- */
+const ALL_MODES = {{ modes|tojson }};
+const ALL_COUNTS = {{ chart_counts|tojson }};
+const ALL_AVG_TIME = {{ chart_time|tojson }};
+const ALL_AVG_DELAY = {{ chart_delay|tojson }};
+const RECENT = {{ recent_rows|tojson }};
+
+function safeNum(v){ return (v===null||v===undefined)?0:Number(v); }
+
+/* UI */
+const modeFilter = document.getElementById('modeFilter');
+const showLast = document.getElementById('showLast');
+const searchBox = document.getElementById('searchBox');
+const recentBody = document.getElementById('recentBody');
+
+/* build filtered/sliced arrays */
+function buildData(limit, mode) {
+  const labels = [];
+  const counts = [];
+  const times = [];
+  const delays = [];
+
+  for (let i=0;i<ALL_MODES.length && labels.length < limit;i++){
+    const m = ALL_MODES[i];
+    if (mode && mode !== "" && mode !== m) continue;
+    labels.push(m);
+    counts.push(safeNum(ALL_COUNTS[i]));
+    times.push(safeNum(ALL_AVG_TIME[i]));
+    delays.push(safeNum(ALL_AVG_DELAY[i]));
+  }
+  return { labels, counts, times, delays };
+}
+
+/* Donut */
+const donutCtx = document.getElementById('modeDonut');
+const donutChart = new Chart(donutCtx, {
+  type: 'doughnut',
+  data: { labels: [], datasets: [{ data: [], backgroundColor: ['#0b63e6','#ff7a59','#00b894','#f6c85f','#6c5ce7'] }] },
+  options: {
+    responsive:true, maintainAspectRatio:false,
+    plugins: {
+      legend: {
+        position: 'bottom',
+        labels: { generateLabels(chart) {
+          return chart.data.labels.map((label,i) => ({ text:(label==='Bus'?'🚌 ':'') + (label==='Metro'?'🚇 ':'') + (label==='Train'?'🚆 ':'') + label, fillStyle: chart.data.datasets[0].backgroundColor[i], index:i }));
+        }}
+      },
+      tooltip: { callbacks: { label: ctx => `${ctx.label}: ${ctx.raw} trips` } }
+    },
+    animation: { animateRotate:true, animateScale:true, duration:700 }
+  }
+});
+
+/* Bar + Line */
+const timeCtx = document.getElementById('timeDelayChart');
+const timeChart = new Chart(timeCtx, {
+  data: { labels: [], datasets: [
+    { type:'bar', label:'Avg Time (min)', data: [], backgroundColor:'#0b63e6' },
+    { type:'line', label:'Avg Delay (min)', data: [], borderColor:'#ff7a59', backgroundColor:'rgba(255,122,89,0.18)', fill:true, tension:0.35 }
+  ]},
+  options: {
+    responsive:true, maintainAspectRatio:false,
+    scales: { y: { beginAtZero:true, title: { display:true, text:'Minutes' } } },
+    plugins: { tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.raw} min` } } },
+    animation: { duration:700, easing:'easeOutQuart' }
+  }
+});
+
+/* update both charts */
+function updateCharts(){
+  const limit = Number(showLast.value || 20);
+  const mode = modeFilter.value || '';
+  const d = buildData(limit, mode);
+
+  donutChart.data.labels = d.labels; donutChart.data.datasets[0].data = d.counts; donutChart.update();
+
+  timeChart.data.labels = d.labels;
+  timeChart.data.datasets[0].data = d.times;
+  timeChart.data.datasets[1].data = d.delays;
+  timeChart.update();
+}
+
+/* recent table render */
+function renderRecent(){
+  const q = (searchBox.value||'').toLowerCase().trim();
+  const mode = modeFilter.value || '';
+  const limit = Number(showLast.value || 20);
+
+  const filtered = RECENT.filter(r=>{
+    if (mode && r.mode !== mode) return false;
+    if (q) {
+      const s=(r.source||'').toLowerCase(), d=(r.destination||'').toLowerCase();
+      if (!s.includes(q) && !d.includes(q)) return false;
+    }
+    return true;
+  }).slice(0, limit);
+
+  if (!filtered.length) {
+    recentBody.innerHTML = '<tr><td colspan="5" style="padding:12px;color:var(--muted)">No recent trips.</td></tr>';
+    return;
+  }
+
+  recentBody.innerHTML = filtered.map((r,i)=>`
+    <tr>
+      <td>${i+1}</td>
+      <td style="white-space:nowrap;">${(r.ts||'').slice(0,10)}</td>
+      <td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${(r.source||'')} → ${(r.destination||'')}</td>
+      <td>${r.mode==='Bus'?'🚌 Bus':(r.mode==='Metro'?'🚇 Metro':'🚆 Train')}</td>
+      <td style="text-align:right;">${r.delay!=null?Number(r.delay).toFixed(2):'-'}</td>
+    </tr>`).join('');
+}
+
+/* wire controls */
+modeFilter.addEventListener('change', ()=>{ updateCharts(); renderRecent(); });
+showLast.addEventListener('change', ()=>{ updateCharts(); renderRecent(); });
+searchBox.addEventListener('input', renderRecent);
+
+/* init */
+updateCharts();
+renderRecent();
+
+/* CSV export */
+document.getElementById('downloadCsv').addEventListener('click',(e)=>{
+  e.preventDefault();
+  if (!RECENT || RECENT.length===0){ alert('No records to export'); return; }
+  const header=['ts','source','destination','mode','total_time','delay','fare'];
+  const rows = RECENT.map(r=>[r.ts||'', (r.source||''), (r.destination||''), r.mode||'', r.total_time||'', r.delay||'', r.fare||'']);
+  const csv = [header.join(',')].concat(rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(','))).join('\n');
+  const blob=new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download=`transport_recent_${Date.now()}.csv`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+});
+</script>
+
+{% endblock %}

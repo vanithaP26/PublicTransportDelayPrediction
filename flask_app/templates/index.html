@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<div style="max-width:600px;margin:auto;background:#fff;padding:25px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.1);">
+  <h2 style="text-align:center;color:#007BFF;">Transport Delay Prediction</h2>
+  <p style="text-align:center;color:#555;">Enter your travel details to predict transport delays</p>
+
+  <form action="{{ url_for('predict') }}" method="POST" style="margin-top:20px;">
+    <label>Source Location:</label>
+    <input type="text" name="source" placeholder="e.g., Majestic Metro Station, Bengaluru" required
+           style="width:100%;padding:10px;margin-bottom:15px;border-radius:6px;border:1px solid #ccc;">
+
+    <label>Destination Location:</label>
+    <input type="text" name="destination" placeholder="e.g., Indiranagar Metro Station, Bengaluru" required
+           style="width:100%;padding:10px;margin-bottom:15px;border-radius:6px;border:1px solid #ccc;">
+
+    <label>Date of Travel:</label>
+    <input type="date" name="date" required
+           style="width:100%;padding:10px;margin-bottom:15px;border-radius:6px;border:1px solid #ccc;">
+
+    <label>Hour of Travel (0–23):</label>
+    <input type="number" name="hour" min="0" max="23" required
+           style="width:100%;padding:10px;margin-bottom:15px;border-radius:6px;border:1px solid #ccc;">
+
+    <button type="submit"
+            style="width:100%;background:#007BFF;color:#fff;border:none;padding:12px;border-radius:6px;font-size:16px;cursor:pointer;">
+      Predict Delay
+    </button>
+  </form>
+</div>
+{% endblock %}

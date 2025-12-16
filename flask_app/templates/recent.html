@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block content %}
+
+<style>
+  .recent-card {
+    animation: fadeIn 0.4s ease-in;
+  }
+
+  .recent-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+
+  .recent-table th,
+  .recent-table td {
+    padding: 8px 10px;
+  }
+
+  .recent-table tbody tr {
+    transition: all 0.2s ease-in-out;
+  }
+
+  .recent-table tbody tr:hover {
+    background-color: #f1f5ff;
+    transform: scale(1.005);
+  }
+
+  .btn {
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+  }
+
+  .btn-sm {
+    padding: 4px 10px;
+    font-size: 13px;
+  }
+
+  .page-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    color: #0f172a;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+</style>
+
+<div class="recent-card"
+     style="max-width:1000px;margin:auto;background:#fff;border:1px solid #eef2ff;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.08);">
+
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #eef2ff;">
+    <h2 class="page-title">
+      Recent Trips
+    </h2>
+
+    <form method="post"
+          action="{{ url_for('recent_clear') }}"
+          onsubmit="return confirm('Clear all history?')">
+      <button class="btn btn-primary">
+        Clear All
+      </button>
+    </form>
+  </div>
+
+  <table class="recent-table">
+    <thead>
+      <tr style="background:#eef4ff;">
+        <th style="text-align:left;width:60px;">S.No</th>
+        <th style="text-align:left;width:170px;">Date &amp; Time</th>
+        <th style="text-align:left;">From</th>
+        <th style="text-align:left;">To</th>
+        <th style="text-align:left;width:110px;">Distance (km)</th>
+        <th style="text-align:left;width:190px;">Actions</th>
+      </tr>
+    </thead>
+
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td>{{ loop.index }}</td>
+
+        <td>
+          {% if r[1].strftime is defined %}
+            <div>{{ r[1].strftime('%d-%b-%Y') }}</div>
+            <div style="font-size:12px;color:#64748b;">
+              {{ r[1].strftime('%I:%M %p') }}
+            </div>
+          {% else %}
+            <div>{{ r[1] }}</div>
+          {% endif %}
+        </td>
+
+        <td style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+          {{ r[2] }}
+        </td>
+        <td style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+          {{ r[3] }}
+        </td>
+        <td>{{ r[4] }}</td>
+
+        <td>
+          <!-- View saved prediction -->
+          <form method="get"
+                action="{{ url_for('predict_view', sid=r[0]) }}"
+                style="display:inline;">
+            <button class="btn btn-outline-primary btn-sm">
+              View
+            </button>
+          </form>
+
+          <!-- Delete -->
+          <form method="post"
+                action="{{ url_for('recent_delete', sid=r[0]) }}"
+                onsubmit="return confirm('Delete this trip?')"
+                style="display:inline;margin-left:6px;">
+            <button class="btn btn-primary btn-sm">
+              Delete
+            </button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

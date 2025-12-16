@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block content %}
+<div style="max-width:720px;margin:40px auto;background:#fff;padding:28px;border-radius:12px;box-shadow:0 6px 20px rgba(0,0,0,.06);">
+  <h2 style="color:#0b63d6;margin-top:0;">Create an account</h2>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for cat,msg in messages %}
+        <div style="padding:10px;border-radius:6px;margin-bottom:10px;
+                    background:{{ ' #e8f5e9' if cat=='ok' else '#ffebee' }};
+                    border:1px solid {{ '#a5d6a7' if cat=='ok' else '#ef9a9a' }};">
+          {{ msg }}
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <form method="post" action="{{ url_for('signup') }}" style="display:grid;gap:12px;">
+    <label>Full name</label>
+    <input type="text" name="name" required style="padding:10px;border:1px solid #e2e8f0;border-radius:8px;">
+
+    <label>Email</label>
+    <input type="email" name="email" required style="padding:10px;border:1px solid #e2e8f0;border-radius:8px;">
+
+    <label>Password</label>
+    <input type="password" name="password" required style="padding:10px;border:1px solid #e2e8f0;border-radius:8px;">
+
+    <button type="submit" class="btn btn-primary" style="width:100%;">Create Account</button>
+  </form>
+
+  <div style="text-align:center;margin-top:10px;">
+    <a href="{{ url_for('login_page') }}">Already have an account? Login</a>
+  </div>
+</div>
+{% endblock %}

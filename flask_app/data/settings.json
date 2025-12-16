@@ -1,0 +1,21 @@
+{
+  "fare": {
+    "Bus": {
+      "base": 5.0,
+      "per_km": 2.5
+    },
+    "Metro": {
+      "base": 10.0,
+      "per_km": 3.0
+    },
+    "Train": {
+      "base": 8.0,
+      "per_km": 2.0
+    }
+  },
+  "speed_kmph": {
+    "Bus": 22.0,
+    "Metro": 32.0,
+    "Train": 40.0
+  }
+}

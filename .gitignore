@@ -1,0 +1,7 @@
+preprocessing/processed/*.csv
+preprocessing/raw/**/*.zip
+.env
+venv/
+venv312/
+__pycache__/
+
