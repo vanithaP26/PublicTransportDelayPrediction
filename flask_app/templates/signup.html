@@ -1,35 +1,98 @@
-{% extends "base.html" %}
-{% block content %}
-<div style="max-width:720px;margin:40px auto;background:#fff;padding:28px;border-radius:12px;box-shadow:0 6px 20px rgba(0,0,0,.06);">
-  <h2 style="color:#0b63d6;margin-top:0;">Create an account</h2>
-
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-      {% for cat,msg in messages %}
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for cat, msg in messages %}
+      {% if cat == 'ok' %}
         <div style="padding:10px;border-radius:6px;margin-bottom:10px;
-                    background:{{ ' #e8f5e9' if cat=='ok' else '#ffebee' }};
-                    border:1px solid {{ '#a5d6a7' if cat=='ok' else '#ef9a9a' }};">
+                    background:#e8f5e9;border:1px solid #a5d6a7;">
           {{ msg }}
         </div>
-      {% endfor %}
-    {% endif %}
-  {% endwith %}
+      {% else %}
+        <div style="padding:10px;border-radius:6px;margin-bottom:10px;
+                    background:#ffebee;border:1px solid #ef9a9a;">
+          {{ msg }}
+        </div>
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+{% endwith %}
 
-  <form method="post" action="{{ url_for('signup') }}" style="display:grid;gap:12px;">
-    <label>Full name</label>
-    <input type="text" name="name" required style="padding:10px;border:1px solid #e2e8f0;border-radius:8px;">
+
+  <!-- IMPORTANT: autocomplete disabled -->
+  <form method="post"
+        action="{{ url_for('signup') }}"
+        style="display:grid;gap:12px;"
+        autocomplete="off"
+        onsubmit="return validatePasswords();">
+
+    <!-- Chrome autofill trap -->
+    <input type="text" name="fakeusernameremembered" style="display:none">
+    <input type="password" name="fakepasswordremembered" style="display:none">
+
+    <label>Full Name</label>
+    <input type="text"
+           name="name"
+           placeholder="Enter your full name"
+           required
+           autocomplete="off"
+           style="padding:10px;border:1px solid #e2e8f0;border-radius:8px;">
 
     <label>Email</label>
-    <input type="email" name="email" required style="padding:10px;border:1px solid #e2e8f0;border-radius:8px;">
+    <input type="email"
+           name="email"
+           placeholder="Enter your email"
+           required
+           autocomplete="off"
+           style="padding:10px;border:1px solid #e2e8f0;border-radius:8px;">
 
     <label>Password</label>
-    <input type="password" name="password" required style="padding:10px;border:1px solid #e2e8f0;border-radius:8px;">
+    <input type="password"
+           id="password"
+           name="password"
+           placeholder="Create a password"
+           required
+           autocomplete="new-password"
+           style="padding:10px;border:1px solid #e2e8f0;border-radius:8px;">
 
-    <button type="submit" class="btn btn-primary" style="width:100%;">Create Account</button>
+    <label>Confirm Password</label>
+    <input type="password"
+           id="confirm_password"
+           name="confirm_password"
+           placeholder="Re-enter password"
+           required
+           autocomplete="new-password"
+           style="padding:10px;border:1px solid #e2e8f0;border-radius:8px;">
+
+    <span id="password_error"
+          style="color:#b00020;font-size:13px;display:none;">
+      Passwords do not match
+    </span>
+
+    <button type="submit"
+            class="btn btn-primary"
+            style="width:100%;margin-top:8px;">
+      Create Account
+    </button>
   </form>
 
-  <div style="text-align:center;margin-top:10px;">
+  <div style="text-align:center;margin-top:12px;font-size:14px;">
     <a href="{{ url_for('login_page') }}">Already have an account? Login</a>
   </div>
 </div>
+
+<!-- Client-side password validation -->
+<script>
+function validatePasswords() {
+  const pwd = document.getElementById("password").value;
+  const cpwd = document.getElementById("confirm_password").value;
+  const error = document.getElementById("password_error");
+
+  if (pwd !== cpwd) {
+    error.style.display = "block";
+    return false;
+  }
+  error.style.display = "none";
+  return true;
+}
+</script>
+
 {% endblock %}

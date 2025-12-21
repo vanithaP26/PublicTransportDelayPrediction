@@ -4,8 +4,6 @@ import json
 import pickle
 import pathlib
 import sqlite3
-import smtplib
-from email.message import EmailMessage
 from datetime import datetime, timezone
 from collections import defaultdict
 
@@ -18,7 +16,17 @@ import requests
 from geopy.distance import geodesic
 from dotenv import load_dotenv
 from werkzeug.security import generate_password_hash, check_password_hash
-from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
+from functools import wraps
+
+def login_required(view_func):
+    @wraps(view_func)
+    def wrapped_view(*args, **kwargs):
+        if not session.get("user"):
+            flash("Please login to continue.", "error")
+            return redirect(url_for("login"))
+        return view_func(*args, **kwargs)
+    return wrapped_view
+
 
 # timezone helper (Python 3.9+). If using older Python, replace with pytz.
 try:
@@ -33,14 +41,7 @@ TOMTOM_KEY = os.getenv("TOMTOM_API_KEY", "").strip()
 MODEL_PATH = "models/transport_delay_model.pkl"
 OPENWEATHER_KEY = os.getenv("OPENWEATHER_KEY", "").strip()
 
-MAIL_FROM = os.getenv("MAIL_FROM", "").strip()
-MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "").strip()
-MAIL_SERVER = os.getenv("MAIL_SERVER", "smtp.gmail.com").strip()
-MAIL_PORT = int(os.getenv("MAIL_PORT", 587))
-
 SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "dev-secret-change-me")
-# serializer for reset tokens
-serializer = URLSafeTimedSerializer(SECRET_KEY)
 
 # --- Flask app
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -449,28 +450,6 @@ def predict_delay_minutes(features):
     delay = base * weather_factor * mode_factor
     return max(delay, 0.0)
 
-# --- Email helper for reset links
-def send_email(to_email, subject, body):
-    if not MAIL_FROM or not MAIL_PASSWORD:
-        print("send_email: mail config missing")
-        return False
-    try:
-        msg = EmailMessage()
-        msg["Subject"] = subject
-        msg["From"] = MAIL_FROM
-        msg["To"] = to_email
-        msg.set_content(body)
-        with smtplib.SMTP(MAIL_SERVER, MAIL_PORT) as server:
-            server.ehlo()
-            server.starttls()
-            server.login(MAIL_FROM, MAIL_PASSWORD)
-            server.send_message(msg)
-        print("Email sent to", to_email)
-        return True
-    except Exception as e:
-        print("Email send error:", repr(e))
-        return False
-
 # --- Live suggestions route (same as yours)
 @app.route("/suggest")
 def suggest():
@@ -512,29 +491,31 @@ def suggest():
 def signup():
     name = (request.form.get("name") or "").strip()
     email = (request.form.get("email") or "").strip().lower()
-    password = (request.form.get("password") or "").strip()
-    if not name or not email or not password:
+    password = request.form.get("password")
+    confirm_password = request.form.get("confirm_password")
+
+    if not name or not email or not password or not confirm_password:
         flash("Please fill all fields.", "error")
-        return redirect(url_for("home") + "#auth")
+        return redirect(url_for("signup_page"))
+
+    if password != confirm_password:
+        flash("Passwords do not match.", "error")
+        return redirect(url_for("signup_page"))
+
     pw_hash = generate_password_hash(password)
+
     try:
         with sqlite3.connect(DB_PATH) as con:
-            cur = con.cursor()
-            cur.execute("INSERT INTO users (name,email,password_hash,created_at) VALUES (?,?,?,?)",
-                        (name,email,pw_hash,datetime.now().isoformat(timespec="seconds")))
-            con.commit()
-            uid = cur.lastrowid
-        session["user"] = {"id": uid, "name": name, "email": email}
-        flash("Account created. Please login.", "ok")
-        # After registration go to login (user asked): clear session and redirect to home auth
-        session.pop("user", None)
-        return redirect(url_for("home") + "#auth")
+            con.execute(
+                "INSERT INTO users (name,email,password_hash,created_at) VALUES (?,?,?,?)",
+                (name, email, pw_hash, datetime.now().isoformat())
+            )
+        flash("Account created successfully. Please login.", "ok")
+        return redirect(url_for("login_page"))
+
     except sqlite3.IntegrityError:
-        flash("That email is already registered.", "error")
-    except Exception as e:
-        print("signup error:", e)
-        flash("Something went wrong. Please try again.", "error")
-    return redirect(url_for("home") + "#auth")
+        flash("Email already registered.", "error")
+        return redirect(url_for("signup_page"))
 
 @app.post("/login")
 def login():
@@ -592,15 +573,18 @@ def home():
     return render_template("home.html")
 
 @app.route("/plan")
+@login_required
 def plan():
     return render_template("plan.html")
 
 @app.route("/about")
+@login_required
 def about():
     return render_template("about.html")
 
 # --- Predict (POST) and predict_view
 @app.route("/predict", methods=["POST"])
+@login_required
 def predict():
     source = (request.form.get("source") or "").strip()
     destination = (request.form.get("destination") or "").strip()
@@ -779,6 +763,7 @@ def predict_view(sid):
 
 # --- Recent / view / delete / clear
 @app.route("/recent")
+@login_required
 def recent():
     with sqlite3.connect(DB_PATH) as con:
         cur = con.cursor()
@@ -829,6 +814,7 @@ def recent_view(sid):
 
 # --- Dashboard
 @app.route("/dashboard")
+@login_required
 def dashboard():
     feature = request.args.get("feature", "public")
     with sqlite3.connect(DB_PATH) as con:
