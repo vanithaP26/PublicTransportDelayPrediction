@@ -2,8 +2,5 @@ flask
 pandas
 numpy
 scikit-learn
-flask
 requests
 geopy
-python-dotenv
-

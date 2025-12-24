@@ -4,6 +4,8 @@ import json
 import pickle
 import pathlib
 import sqlite3
+import smtplib
+from email.message import EmailMessage
 from datetime import datetime, timezone
 from collections import defaultdict
 
@@ -16,16 +18,21 @@ import requests
 from geopy.distance import geodesic
 from dotenv import load_dotenv
 from werkzeug.security import generate_password_hash, check_password_hash
+from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from functools import wraps
+from flask import session, redirect, url_for, flash
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-def login_required(view_func):
-    @wraps(view_func)
-    def wrapped_view(*args, **kwargs):
-        if not session.get("user"):
-            flash("Please login to continue.", "error")
-            return redirect(url_for("login"))
-        return view_func(*args, **kwargs)
-    return wrapped_view
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if "user" not in session:
+            flash("Please login to continue", "error")
+            return redirect(url_for("login_page"))
+        return f(*args, **kwargs)
+    return decorated_function
 
 
 # timezone helper (Python 3.9+). If using older Python, replace with pytz.
@@ -41,7 +48,14 @@ TOMTOM_KEY = os.getenv("TOMTOM_API_KEY", "").strip()
 MODEL_PATH = "models/transport_delay_model.pkl"
 OPENWEATHER_KEY = os.getenv("OPENWEATHER_KEY", "").strip()
 
+MAIL_FROM = os.getenv("MAIL_FROM", "").strip()
+MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "").strip()
+MAIL_SERVER = os.getenv("MAIL_SERVER", "smtp.gmail.com").strip()
+MAIL_PORT = int(os.getenv("MAIL_PORT", 587))
+
 SECRET_KEY = os.getenv("FLASK_SECRET_KEY", "dev-secret-change-me")
+# serializer for reset tokens
+serializer = URLSafeTimedSerializer(SECRET_KEY)
 
 # --- Flask app
 app = Flask(__name__, template_folder="templates", static_folder="static")
@@ -64,8 +78,10 @@ def init_db():
             destination TEXT,
             road_km REAL,
             modes_json TEXT,
-            feature TEXT DEFAULT 'public'
-        )""")
+            feature TEXT DEFAULT 'public',
+            user_id INTEGER
+        )
+        """)
         cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,7 +89,8 @@ def init_db():
             email TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL,
             created_at TEXT NOT NULL
-        )""")
+        )
+        """)
         con.commit()
 
 init_db()
@@ -108,40 +125,42 @@ FALLBACK_PLACES = {
 
 # ====== Robust geocoding helpers (replace existing versions) ======
 def _osm_try(query: str, prox=None):
-    """Call Nominatim; prefer results mentioning Karnataka when present.
-       Returns (lat, lon, display_name) or None.
-    """
     try:
         if not query:
             return None
+
         base = "https://nominatim.openstreetmap.org/search"
-        params = {"format": "json", "q": query, "limit": 3, "addressdetails": 1}
-        # if prox provided, bias with viewbox but do not rely solely on bounded results
+        params = {"format": "json", "q": query, "limit": 1}
+
         if prox:
             lat, lon = prox
-            d = 0.25
-            params.update({"viewbox": f"{lon-d},{lat+d},{lon+d},{lat-d}", "bounded": 1})
+            d = 0.3
+            params.update({
+                "viewbox": f"{lon-d},{lat+d},{lon+d},{lat-d}",
+                "bounded": 1
+            })
 
-        print(f"[geocode] OSM request q={query!r} prox={prox}")
-        r = requests.get(base, params=params, headers=OSM_UA, timeout=10)
+        r = requests.get(
+            base,
+            params=params,
+            headers=OSM_UA,
+            timeout=10,
+            verify=False
+        )
         r.raise_for_status()
         data = r.json()
+
         if not data:
             return None
 
-        # prefer results that explicitly mention Karnataka in address or display name
-        for item in data:
-            addr = item.get("address", {})
-            disp = item.get("display_name", "") or ""
-            if "karnataka" in (addr.get("state", "") or "").lower() or "karnataka" in disp.lower():
-                return float(item["lat"]), float(item["lon"]), disp
+        item = data[0]
+        return float(item["lat"]), float(item["lon"]), item.get("display_name", "")
 
-        # otherwise return first usable result
-        first = data[0]
-        return float(first["lat"]), float(first["lon"]), first.get("display_name", "")
     except Exception as e:
-        print(f"[geocode] _osm_try error for q={query!r}: {e}")
+        print("[geocode] OSM error:", e)
         return None
+
+          
 
 def _geo_strong_karnataka(q: str, prox=None):
     """Try a sequence of query forms: detailed → region → country → raw; return first match."""
@@ -221,11 +240,18 @@ def _geo_with_fallback(text: str, prox=None):
     return None
 
 def geocode_pair(src_text: str, dst_text: str):
-    """Return (src_ll, dst_ll, error_msg-or-None). src_ll/dst_ll are (lat,lon)."""
-    s = _geo_with_fallback(src_text)
-    d = _geo_with_fallback(dst_text)
+    try:
+        s = _geo_with_fallback(src_text)
+        d = _geo_with_fallback(dst_text)
+    except Exception as e:
+        print("[geocode] error:", e)
+        return None, None, None
+
     if not s or not d:
-        return None, None, ("We couldn’t locate one of those places. Try a more specific name (e.g., ‘Majestic, Bengaluru’).")
+        return None, None, None
+
+    return (s[0], s[1]), (d[0], d[1]), None
+
     s_ll, d_ll = (s[0], s[1]), (d[0], d[1])
 
     # if very far, bias a second pass toward each other
@@ -288,23 +314,24 @@ def in_karnataka(pt):
     return 11.5 <= lat <= 18.5 and 74.0 <= lon <= 78.7
 
 def available_public_modes(road_km, has_route, src_ll, dst_ll):
-    avail = []
-    if road_km is None:
-        return avail
-    if has_route and in_karnataka(src_ll) and in_karnataka(dst_ll) and 1 <= road_km <= 800:
-        avail.append("Bus")
-    src_metro_km = _min_dist_km(src_ll, BLR_METRO_STATIONS)
-    dst_metro_km = _min_dist_km(dst_ll, BLR_METRO_STATIONS)
-    if src_metro_km <= 3.5 and dst_metro_km <= 3.5 and road_km <= 40:
-        avail.append("Metro")
-    if road_km >= 120 and in_karnataka(src_ll) and in_karnataka(dst_ll):
-        avail.append("Train")
-    # unique
-    out, seen = [], set()
-    for m in avail:
-        if m not in seen:
-            out.append(m); seen.add(m)
-    return out
+    modes = []
+
+    # BUS: only if road route exists
+    if has_route and road_km and road_km >= 1:
+        modes.append("Bus")
+
+    # METRO: only inside Bengaluru & near stations
+    if road_km and 2 <= road_km <= 40:
+        src_m = _min_dist_km(src_ll, BLR_METRO_STATIONS)
+        dst_m = _min_dist_km(dst_ll, BLR_METRO_STATIONS)
+        if src_m <= 2 and dst_m <= 2:
+            modes.append("Metro")
+
+    # TRAIN: only long distance
+    if road_km and road_km >= 120:
+        modes.append("Train")
+
+    return modes
 
 # --- Weather & traffic functions (use requested time)
 def _unix_ts(dt):
@@ -450,6 +477,28 @@ def predict_delay_minutes(features):
     delay = base * weather_factor * mode_factor
     return max(delay, 0.0)
 
+# --- Email helper for reset links
+def send_email(to_email, subject, body):
+    if not MAIL_FROM or not MAIL_PASSWORD:
+        print("send_email: mail config missing")
+        return False
+    try:
+        msg = EmailMessage()
+        msg["Subject"] = subject
+        msg["From"] = MAIL_FROM
+        msg["To"] = to_email
+        msg.set_content(body)
+        with smtplib.SMTP(MAIL_SERVER, MAIL_PORT) as server:
+            server.ehlo()
+            server.starttls()
+            server.login(MAIL_FROM, MAIL_PASSWORD)
+            server.send_message(msg)
+        print("Email sent to", to_email)
+        return True
+    except Exception as e:
+        print("Email send error:", repr(e))
+        return False
+
 # --- Live suggestions route (same as yours)
 @app.route("/suggest")
 def suggest():
@@ -491,31 +540,29 @@ def suggest():
 def signup():
     name = (request.form.get("name") or "").strip()
     email = (request.form.get("email") or "").strip().lower()
-    password = request.form.get("password")
-    confirm_password = request.form.get("confirm_password")
-
-    if not name or not email or not password or not confirm_password:
+    password = (request.form.get("password") or "").strip()
+    if not name or not email or not password:
         flash("Please fill all fields.", "error")
-        return redirect(url_for("signup_page"))
-
-    if password != confirm_password:
-        flash("Passwords do not match.", "error")
-        return redirect(url_for("signup_page"))
-
+        return redirect(url_for("home") + "#auth")
     pw_hash = generate_password_hash(password)
-
     try:
         with sqlite3.connect(DB_PATH) as con:
-            con.execute(
-                "INSERT INTO users (name,email,password_hash,created_at) VALUES (?,?,?,?)",
-                (name, email, pw_hash, datetime.now().isoformat())
-            )
-        flash("Account created successfully. Please login.", "ok")
-        return redirect(url_for("login_page"))
-
+            cur = con.cursor()
+            cur.execute("INSERT INTO users (name,email,password_hash,created_at) VALUES (?,?,?,?)",
+                        (name,email,pw_hash,datetime.now().isoformat(timespec="seconds")))
+            con.commit()
+            uid = cur.lastrowid
+        session["user"] = {"id": uid, "name": name, "email": email}
+        flash("Account created. Please login.", "ok")
+        # After registration go to login (user asked): clear session and redirect to home auth
+        session.pop("user", None)
+        return redirect(url_for("home") + "#auth")
     except sqlite3.IntegrityError:
-        flash("Email already registered.", "error")
-        return redirect(url_for("signup_page"))
+        flash("That email is already registered.", "error")
+    except Exception as e:
+        print("signup error:", e)
+        flash("Something went wrong. Please try again.", "error")
+    return redirect(url_for("home") + "#auth")
 
 @app.post("/login")
 def login():
@@ -542,7 +589,7 @@ def login():
     except Exception as e:
         print("login error:", e)
         flash("Something went wrong. Please try again.", "error")
-    return redirect(url_for("plan"))
+    return redirect(url_for("login_page"))
 
 @app.get("/logout")
 def logout():
@@ -578,14 +625,15 @@ def plan():
     return render_template("plan.html")
 
 @app.route("/about")
-@login_required
 def about():
     return render_template("about.html")
 
 # --- Predict (POST) and predict_view
 @app.route("/predict", methods=["POST"])
-@login_required
 def predict():
+    road_km = None
+    modes = []
+
     source = (request.form.get("source") or "").strip()
     destination = (request.form.get("destination") or "").strip()
     if not source or not destination:
@@ -608,24 +656,37 @@ def predict():
         when_dt = datetime.now()
 
     src_ll, dst_ll, geo_err = geocode_pair(source, destination)
-    if geo_err:
-        try:
-            with sqlite3.connect(DB_PATH) as con:
-                con.execute(
-                    "INSERT INTO searches (ts, source, destination, road_km, modes_json, feature) VALUES (?,?,?,?,?,?)",
-                    (datetime.now().isoformat(timespec="seconds"), source, destination, 0.0, json.dumps([]), "public")
-                ); con.commit()
-        except Exception as e:
-            print("History insert (geocode_err) error:", e)
-        return f"<h3 style='color:#b00020'>{geo_err}</h3>"
 
+    if not src_ll or not dst_ll:
+        return render_template(
+            "result.html",
+            feature="public",
+            source=source,
+            destination=destination,
+            weather={},
+            rows=[],
+            map_payload=json.dumps({}),
+            distance_km=0,
+            no_modes_msg="No public transport available for this route.",
+            suggestions=json.dumps([])
+        )
+
+    road_poly = []
+    
     route_data, route_err = tomtom_route(src_ll, dst_ll)
-    road_km = None; road_poly = []; bus_time_min = None
-    if not route_err and route_data:
-        road_km = route_data["distance_km"]; road_poly = route_data["coords"]; bus_time_min = route_data["duration_min"]
+
+    road_km = None
+    road_poly = []
+    bus_time_min = None
+
+    if route_data:
+        road_km = route_data["distance_km"]
+        road_poly = route_data["coords"]
+        bus_time_min = route_data["duration_min"]
 
     straight_km = round(geodesic(src_ll, dst_ll).km, 2)
-    display_km = road_km if road_km is not None else straight_km
+    display_km = road_km if road_km else straight_km
+
 
     # use weather & traffic for requested travel time
     try:
@@ -661,6 +722,20 @@ def predict():
 
     has_route = route_data is not None
     modes = available_public_modes(road_km, has_route, src_ll, dst_ll)
+    if not modes:
+        return render_template(
+            "result.html",
+            feature="public",
+            source=source,
+            destination=destination,
+            weather=weather,
+            rows=[],
+            map_payload=json.dumps({}),
+            distance_km=display_km,
+            no_modes_msg="No public transport exists between the selected locations.",
+            suggestions=json.dumps([])
+        )
+
 
     rows = []
     for mode in modes:
@@ -708,11 +783,26 @@ def predict():
 
     # Save history
     try:
+        user_id = session["user"]["id"]
+
         with sqlite3.connect(DB_PATH) as con:
             con.execute(
-                "INSERT INTO searches (ts, source, destination, road_km, modes_json, feature) VALUES (?,?,?,?,?,?)",
-                (datetime.now().isoformat(timespec="seconds"), source, destination, road_km or 0.0, json.dumps(rows), "public")
-            ); con.commit()
+            """
+            INSERT INTO searches (
+                ts, source, destination, road_km, modes_json, feature, user_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                datetime.now().isoformat(timespec="seconds"),
+                source,
+                destination,
+                road_km or 0.0,
+                json.dumps(rows),
+                "public",
+                user_id
+            )
+        )
+        con.commit()
     except Exception as e:
         print("History insert error:", e)
 
@@ -765,9 +855,16 @@ def predict_view(sid):
 @app.route("/recent")
 @login_required
 def recent():
+    user_id = session["user"]["id"] 
     with sqlite3.connect(DB_PATH) as con:
         cur = con.cursor()
-        cur.execute("SELECT id, ts, source, destination, road_km FROM searches ORDER BY id DESC LIMIT 300")
+        cur.execute("""
+            SELECT id, ts, source, destination, road_km
+            FROM searches
+            WHERE user_id = ?
+            ORDER BY id DESC
+        """, (user_id,))
+
         rows = cur.fetchall()
     parsed_rows = []
     for rid, ts, src, dst, road_km in rows:
@@ -780,24 +877,37 @@ def recent():
 
 @app.post("/recent/<int:sid>/delete")
 def recent_delete(sid):
+    user_id = session["user"]["id"]
     with sqlite3.connect(DB_PATH) as con:
         cur = con.cursor()
-        cur.execute("DELETE FROM searches WHERE id=?", (sid,))
+        cur.execute("""
+            DELETE FROM searches
+            WHERE id = ? AND user_id = ?
+        """, (sid, user_id))
         con.commit()
     return redirect(url_for("recent"))
 
 @app.post("/recent/clear")
 def recent_clear():
+    user_id = session["user"]["id"]
     with sqlite3.connect(DB_PATH) as con:
-        con.execute("DELETE FROM searches")
+        con.execute(
+            "DELETE FROM searches WHERE user_id = ?",
+            (user_id,)
+        )
         con.commit()
     return redirect(url_for("recent"))
 
 @app.route("/recent/<int:sid>")
 def recent_view(sid):
+    user_id = session["user"]["id"]
     with sqlite3.connect(DB_PATH) as con:
         cur = con.cursor()
-        cur.execute("SELECT id, ts, source, destination, road_km, modes_json FROM searches WHERE id=?", (sid,))
+        cur.execute("""
+            SELECT id, ts, source, destination, road_km, modes_json
+            FROM searches
+            WHERE id = ? AND user_id = ?
+        """, (sid, user_id))
         row = cur.fetchone()
     if not row:
         abort(404)
@@ -817,95 +927,141 @@ def recent_view(sid):
 @login_required
 def dashboard():
     feature = request.args.get("feature", "public")
+    user_id = session["user"]["id"]
+
     with sqlite3.connect(DB_PATH) as con:
-        cur = con.cursor()
+        con.row_factory = sqlite3.Row
         if feature == "both":
-            cur.execute("SELECT ts, source, destination, modes_json, road_km, feature FROM searches ORDER BY id DESC LIMIT 300")
+            recs = con.execute("""
+                SELECT ts, source, destination, modes_json, road_km, feature
+                FROM searches
+                WHERE user_id = ?               
+                ORDER BY id DESC
+                LIMIT 300
+            """, (user_id,)).fetchall()
         else:
-            cur.execute("SELECT ts, source, destination, modes_json, road_km, feature FROM searches WHERE feature=? ORDER BY id DESC LIMIT 300", (feature,))
-        recs = cur.fetchall()
+            recs = con.execute("""
+                SELECT ts, source, destination, modes_json, road_km, feature
+                FROM searches
+                WHERE  user_id = ? AND feature=?
+                ORDER BY id DESC
+                LIMIT 300
+            """, (user_id,feature)).fetchall()
 
-    # Aggregate counters and lists
-    count = defaultdict(int)
-    times = defaultdict(list)
-    delays = defaultdict(list)
-    fares = defaultdict(list)
-    road_kms = []
-    flat_rows = []
+    # -------------------------------
+    # AGGREGATION CONTAINERS
+    # -------------------------------
+    mode_count   = defaultdict(int)
+    mode_times   = defaultdict(list)
+    mode_delays  = defaultdict(list)
+    road_kms     = []
+    flat_rows    = []
 
-    def mean(arr): return (sum(arr)/len(arr)) if arr else 0
+    def mean(arr):
+        return round(sum(arr) / len(arr), 2) if arr else 0
 
-    for ts, src, dst, modes_json, rk, feat in recs:
+    # -------------------------------
+    # PROCESS DATABASE ROWS
+    # -------------------------------
+    for row in recs:
+        ts  = row["ts"]
+        src = row["source"]
+        dst = row["destination"]
+        rk  = row["road_km"]
+        feat = row["feature"]
+
         if rk is not None:
             try:
                 road_kms.append(float(rk))
             except:
                 pass
 
-        if not modes_json:
+        if not row["modes_json"]:
             continue
-        try:
-            rows = json.loads(modes_json)
-        except Exception:
-            rows = []
 
-        for r in rows:
-            m = r.get("mode") or r.get("mode", None)
-            if not m:
+        try:
+            modes = json.loads(row["modes_json"])
+        except Exception:
+            modes = []
+
+        for m in modes:
+            mode = m.get("mode")
+            if not mode:
                 continue
-            count[m] += 1
-            if "total_time_min" in r:
-                try: times[m].append(float(r["total_time_min"]))
-                except: pass
-            if "predicted_delay" in r:
-                try: delays[m].append(float(r["predicted_delay"]))
-                except: pass
-            if "fare" in r:
-                try: fares[m].append(float(r["fare"]))
-                except: pass
+
+            mode_count[mode] += 1
+
+            if m.get("total_time_min") is not None:
+                mode_times[mode].append(float(m["total_time_min"]))
+
+            if m.get("predicted_delay") is not None:
+                mode_delays[mode].append(float(m["predicted_delay"]))
 
             flat_rows.append({
-                "ts": ts,
+                "ts": ts[:10] if ts else "",
                 "source": src,
                 "destination": dst,
-                "mode": m,
-                "total_time": r.get("total_time_min", None),
-                "delay": r.get("predicted_delay", r.get("delay", None)),
-                "fare": r.get("fare", None),
+                "mode": mode,
+                "delay": m.get("predicted_delay"),
+                "total_time": m.get("total_time_min"),
                 "feature": feat
             })
 
-    modes_sorted = sorted(count.keys())
-    chart_counts = [count[m] for m in modes_sorted]
-    chart_time   = [round(mean(times[m]), 1) for m in modes_sorted]
-    chart_delay  = [round(mean(delays[m]), 1) for m in modes_sorted]
+    # -------------------------------
+    # KPI CALCULATIONS
+    # -------------------------------
+    total_trips = len(recs)
+
+    all_times = []
+    for v in mode_times.values():
+        all_times.extend(v)
+
+    avg_time = mean(all_times)
 
     fastest_mode = "-"
     lowest_delay_mode = "-"
-    if modes_sorted:
-        avg_time_by_mode = {m: mean(times[m]) for m in modes_sorted if times[m]}
-        avg_delay_by_mode = {m: mean(delays[m]) for m in modes_sorted if delays[m]}
-        if avg_time_by_mode: fastest_mode = min(avg_time_by_mode, key=avg_time_by_mode.get)
-        if avg_delay_by_mode: lowest_delay_mode = min(avg_delay_by_mode, key=avg_delay_by_mode.get)
 
+    if mode_times:
+        fastest_mode = min(mode_times, key=lambda k: mean(mode_times[k]) if mode_times[k] else 999)
+
+    if mode_delays:
+        lowest_delay_mode = min(mode_delays, key=lambda k: mean(mode_delays[k]) if mode_delays[k] else 999)
+
+    # -------------------------------
+    # CHART DATA
+    # -------------------------------
+    modes_sorted = sorted(mode_count.keys())
+
+    chart_counts = [mode_count[m] for m in modes_sorted]
+    chart_time   = [mean(mode_times[m]) for m in modes_sorted]
+    chart_delay  = [mean(mode_delays[m]) for m in modes_sorted]
+
+    # -------------------------------
+    # KPI OBJECT
+    # -------------------------------
     cards = {
-        "total_trips": len(recs),
-        "avg_road_km": round(mean(road_kms), 1) if road_kms else 0,
+        "total_trips": total_trips,
+        "avg_time": avg_time,
         "fastest_mode": fastest_mode,
         "lowest_delay_mode": lowest_delay_mode
     }
 
-    # Pass Python objects — template will use tojson when needed for JS
+    print("DASHBOARD KPI:", cards)
+
+    # -------------------------------
+    # RENDER TEMPLATE
+    # -------------------------------
     return render_template(
         "dashboard.html",
+        feature=feature,
+        cards=cards,
         modes=modes_sorted,
         chart_counts=chart_counts,
         chart_time=chart_time,
         chart_delay=chart_delay,
-        cards=cards,
-        recent_rows=flat_rows,
-        feature=feature
+        recent_rows=flat_rows
     )
+
 
 if __name__ == "__main__":
     # helpful: print available endpoints when server starts (debug)

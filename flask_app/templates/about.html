@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% block content %}
+
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
 
 <style>
@@ -77,45 +78,52 @@
 
 <div class="about-page">
 
-  <h1>About This Project</h1>
+  <h1>About the Application</h1>
 
   <p class="desc">
-    The Public Transport Delay Prediction System is a simple and intuitive platform
-    designed to estimate delays for **Bus, Metro, and Train** based on weather,
-    traffic conditions, and historical patterns.
-    It helps users plan better by providing route insights, delay estimates, and
-    an interactive dashboard for recent searches.
+    This web application helps users understand and estimate delays in public
+    transportation systems such as buses, metro trains, and railways.
   </p>
 
   <p class="desc">
-    This project is built as a demonstration for academic purposes, focusing on
-    user-friendly design, clean data pipelines, and practical machine-learning integration.
+    By entering a source and destination, the system predicts possible delays
+    and travel time using traffic conditions, weather data, and distance.
   </p>
 
-  <h3 class="section-title">Technologies Used</h3>
+  <p class="desc">
+    The application also stores user travel history and displays insights
+    through a dashboard for better analysis and understanding.
+  </p>
+
+  <h3 class="section-title">System Highlights</h3>
+
+  <p class="desc">
+    • User login and authentication  
+    <br>• Delay prediction for public transport  
+    <br>• Recent trip history  
+    <br>• Dashboard with travel insights  
+    <br>• Simple and user-friendly interface
+  </p>
+
+  <h3 class="section-title">Technology Stack</h3>
 
   <div class="tech-box">
     <span class="tech-pill">Python</span>
     <span class="tech-pill">Flask</span>
     <span class="tech-pill">SQLite</span>
-    <span class="tech-pill">Pandas</span>
-    <span class="tech-pill">NumPy</span>
-    <span class="tech-pill">scikit-learn</span>
-    <span class="tech-pill">Chart.js</span>
-    <span class="tech-pill">Leaflet Maps</span>
-    <span class="tech-pill">HTML / CSS</span>
+    <span class="tech-pill">Machine Learning</span>
+    <span class="tech-pill">HTML</span>
+    <span class="tech-pill">CSS</span>
+    <span class="tech-pill">JavaScript</span>
   </div>
 
-  <h3 class="section-title">Purpose</h3>
-  <p class="desc">
-    The goal is to provide a simple, easy-to-understand system that shows how
-    real-time data, geocoding, weather APIs, and predictive modelling come together
-    in a full working application.
+  <p class="footer-note">
+    This application is developed as part of an academic project to demonstrate
+    real-time data handling and predictive analysis in web applications.
   </p>
 
-  <p class="footer-note">For demo or educational use only.</p>
-
-  <a class="btn-primary" href="{{ url_for('plan') }}">Plan a Trip</a>
+  <a class="btn-primary" href="{{ url_for('plan') }}">Start Planning</a>
 
 </div>
+
 {% endblock %}
