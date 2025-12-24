@@ -4,4 +4,6 @@ preprocessing/raw/**/*.zip
 venv/
 venv312/
 __pycache__/
+# Large datasets
+flask_app/data/final_dataset.csv
 
