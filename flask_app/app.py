@@ -23,7 +23,9 @@ from functools import wraps
 from flask import session, redirect, url_for, flash
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
+# --- Admin Credentials (simple demo setup) ---
+ADMIN_USERNAME = "admin@gmail.com"
+ADMIN_PASSWORD = "admin123"
 
 def login_required(f):
     @wraps(f)
@@ -34,6 +36,14 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+def admin_required(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        if session.get("role") != "admin":
+            flash("Admin access only!", "error")
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return wrapper
 
 # timezone helper (Python 3.9+). If using older Python, replace with pytz.
 try:
@@ -91,6 +101,24 @@ def init_db():
             created_at TEXT NOT NULL
         )
         """)
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS admins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE,
+            password_hash TEXT
+        )
+        """)
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS feedback (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        email TEXT,
+        message TEXT,
+        created_at TEXT
+        )
+        """)
+
+
         con.commit()
 
 init_db()
@@ -591,11 +619,37 @@ def login():
         flash("Something went wrong. Please try again.", "error")
     return redirect(url_for("login_page"))
 
-@app.get("/logout")
-def logout():
-    session.pop("user", None)
-    flash("You have been logged out.", "ok")
-    return redirect(url_for("login_page"))
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+
+        # Admin credentials (can later move to DB)
+        if username == "admin@gmail.com" and password == "admin123":
+            session.clear()                 # clear old sessions
+            session["role"] = "admin"
+            session["admin_email"] = username
+            return redirect(url_for("admin_dashboard"))
+        else:
+            flash("Invalid admin credentials", "error")
+            return redirect(url_for("admin_login"))
+
+    return render_template("admin_login.html")
+
+@app.route("/admin/delete-feedback/<int:fid>", methods=["POST"])
+def delete_feedback(fid):
+    with sqlite3.connect(DB_PATH) as con:
+        cur = con.cursor()
+        cur.execute("DELETE FROM feedback WHERE id = ?", (fid,))
+        con.commit()
+    return redirect(url_for("admin_dashboard"))
+
+@app.route("/admin/logout")
+def admin_logout():
+    session.pop("admin", None)
+    flash("Logged out successfully", "success")
+    return redirect(url_for("admin_login"))
 
 # show the login form (GET)
 @app.get("/login")
@@ -612,6 +666,26 @@ def signup_page():
         return redirect(url_for("plan"))
     return render_template("signup.html")
 
+@app.route("/feedback", methods=["GET", "POST"])
+@login_required
+def feedback():
+    if request.method == "POST":
+        name = request.form.get("name")
+        email = request.form.get("email")
+        message = request.form.get("message")
+
+        with sqlite3.connect(DB_PATH) as con:
+            cur = con.cursor()
+            cur.execute("""
+                INSERT INTO feedback (name, email, message, created_at)
+                VALUES (?, ?, ?, ?)
+            """, (name, email, message, datetime.now().isoformat()))
+            con.commit()
+
+        flash("Thank you for your feedback!", "success")
+        return redirect(url_for("feedback"))
+
+    return render_template("feedback.html")
 
 
 # --- Pages ---
@@ -1060,6 +1134,48 @@ def dashboard():
         chart_time=chart_time,
         chart_delay=chart_delay,
         recent_rows=flat_rows
+    )
+
+@app.route("/admin/dashboard")
+@admin_required
+def admin_dashboard():
+    with sqlite3.connect(DB_PATH) as con:
+        con.row_factory = sqlite3.Row
+        cur = con.cursor()
+
+        # --- USERS + TOTAL TRIPS ---
+        cur.execute("""
+            SELECT 
+                u.id,
+                u.name,
+                u.email,
+                COUNT(s.id) AS total_trips
+            FROM users u
+            LEFT JOIN searches s ON u.id = s.user_id
+            GROUP BY u.id
+        """)
+        users = cur.fetchall()
+
+        # --- FEEDBACK ---
+        cur.execute("""
+            SELECT id,name, email, message, created_at
+            FROM feedback
+            ORDER BY created_at DESC
+        """)
+        feedbacks = cur.fetchall()
+
+        # --- COUNTS ---
+        total_users = len(users)
+        total_trips = sum(u["total_trips"] for u in users)
+        total_feedback = len(feedbacks)
+
+    return render_template(
+        "admin_dashboard.html",
+        users=users,
+        feedbacks=feedbacks,
+        total_users=total_users,
+        total_trips=total_trips,
+        total_feedback=total_feedback
     )
 
 

@@ -2,158 +2,184 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <meta name="theme-color" content="#007BFF"/>
-  <link rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-  <!-- Leaflet (Map) -->
-  <link rel="stylesheet"
-      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ title or "Public Transport Delay" }}</title>
 
-  <title>{{ title or "Transport Delay Prediction" }}</title>
+  <!-- Icons -->
+  <link rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 
-  <!-- Base styles -->
+  <!-- Leaflet -->
+  <link rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
   <style>
-    :root{
-      --brand:#007BFF;
-      --brand-700:#2563eb;
-      --ink:#0f172a;
-      --muted:#475569;
-      --bg:#f5f7fa;
-      --card:#ffffff;
-      --ring:#e5e7eb;
-      --ring-2:#cfd6e4;
-      --hover:#FFD43B;
+    :root {
+      --brand:#0d6efd;
+      --hover:#2563eb;
+      --bg:#f6f8fb;
+      --dark:#0f172a;
     }
-    *{box-sizing:border-box}
-    body{margin:0;font-family:'Poppins',system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", sans-serif;
+      background: var(--bg);
+    }
 
     /* NAVBAR */
-    nav{
-      background:var(--brand);color:#fff;
-      display:flex;align-items:center;justify-content:space-between;
-      padding:12px 18px;position:sticky;top:0;z-index:50;
-    }
-    .logo{font-weight:700;font-size:18px;display:flex;align-items:center;gap:8px}
-    .nav-links{list-style:none;display:flex;gap:18px;margin:0;padding:0;align-items:center}
-    .nav-links a{
-      color:#fff;text-decoration:none;font-weight:500;opacity:.95;transition:.2s;
-      padding:8px 10px;border-radius:8px;
-    }
-    .nav-links a:hover{color:var(--hover);background:rgba(255,255,255,.08)}
-    .nav-links a.active{background:rgba(255,255,255,.18);color:#fff}
-
-    /* Mobile nav */
-    .hamb{display:none;cursor:pointer;border:1px solid rgba(255,255,255,.4);padding:6px 10px;border-radius:8px}
-    @media (max-width:900px){
-      .nav-links{display:none;position:absolute;left:0;right:0;top:56px;background:var(--brand);
-                 padding:10px 16px;flex-direction:column;gap:8px;border-top:1px solid rgba(255,255,255,.25)}
-      .nav-links.show{display:flex}
-      .hamb{display:block}
+    nav {
+      background: var(--brand);
+      padding: 14px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 999;
     }
 
-    .content{padding:26px 16px;max-width:1200px;margin:0 auto}
+    .logo {
+      color: white;
+      font-weight: 700;
+      font-size: 18px;
+    }
 
-    /* Buttons */
-    .btn{padding:10px 14px;border:none;border-radius:10px;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
-    .btn-primary{background:var(--brand-700);color:#fff;box-shadow:0 4px 14px rgba(37,99,235,.25)}
-    .btn-ghost{background:#e2e8f0;color:#0f172a}
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
 
-    /* Cards / utilities */
-    .card{background:var(--card);border:1px solid var(--ring);border-radius:16px;box-shadow:0 2px 10px rgba(0,0,0,.06)}
-    .muted{color:var(--muted)}
-    .footer{ text-align:center;padding:16px;background:var(--brand);color:#fff;margin-top:40px }
+    .nav-links a {
+      color: white;
+      text-decoration: none;
+      font-weight: 500;
+      padding: 6px 10px;
+      border-radius: 6px;
+    }
 
-    /* Flash toasts */
-    #flash{position:fixed;right:16px;bottom:16px;z-index:9999}
-    .toast{margin-top:6px;padding:10px 12px;border-radius:10px;color:#0f172a}
-    .toast.ok{background:#d1fae5;border:1px solid #34d399}
-    .toast.error{background:#fee2e2;border:1px solid #fca5a5}
+    .nav-links a:hover {
+      background: rgba(255,255,255,0.2);
+    }
+
+    /* Dropdown */
+    .dropdown {
+      position: relative;
+    }
+
+    .dropdown-toggle {
+      background: #0d6efd;
+      border: none;
+      color: white;
+      padding: 8px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .dropdown-menu {
+      position: absolute;
+      right: 0;
+      top: 110%;
+      background: white;
+      border-radius: 10px;
+      min-width: 180px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+      display: none;
+      z-index: 999;
+    }
+
+    .dropdown-menu a {
+      display: block;
+      padding: 12px 16px;
+      text-decoration: none;
+      color: #1f2937;
+    }
+
+    .dropdown-menu a:hover {
+      background: #f1f5f9;
+    }
+
+    .dropdown:hover .dropdown-menu {
+      display: block;
+    }
+
+    .content {
+      padding: 30px;
+      max-width: 1200px;
+      margin: auto;
+    }
+
+    footer {
+      background: #0d6efd;
+      color: white;
+      text-align: center;
+      padding: 14px;
+      margin-top: 40px;
+    }
   </style>
-
-  {% block extra_head %}{% endblock %}
 </head>
+
 <body>
-  <nav>
-    <div class="logo">🚦 <span>Public Transport Delay</span></div>
 
-    <button class="hamb" id="hamb">☰</button>
+<nav>
+  <div class="logo">🚦 Public Transport Delay</div>
 
-    <ul class="nav-links" id="navLinks">
-      <li><a href="{{ url_for('home') }}"       data-path="/">Home</a></li>
-      <li><a href="{{ url_for('about') }}"      data-path="/about">About</a></li>
-      <li><a href="{{ url_for('plan') }}"       data-path="/plan">Plan Trip</a></li>
-      <li><a href="{{ url_for('dashboard') }}"  data-path="/dashboard">Dashboard</a></li>
-      <li><a href="{{ url_for('recent') }}"     data-path="/recent">Recent</a></li>
+  <div class="nav-links">
+    <a href="{{ url_for('home') }}">Home</a>
+    <a href="{{ url_for('about') }}">About</a>
+    <a href="{{ url_for('plan') }}">Plan Trip</a>
+    <a href="{{ url_for('dashboard') }}">Dashboard</a>
+    <a href="{{ url_for('recent') }}">Recent</a>
+    <a href="{{ url_for('feedback') }}">Feedback</a>
 
 
-      {% if session.get('user') %}
-        <li style="margin-left:6px;opacity:.95;">👋 {{ session['user']['name'] }}</li>
-        <li><a href="{{ url_for('logout') }}">Logout</a></li>
-      {% else %}
-        <li><a href="{{ url_for('home') }}#auth">Login / Sign up</a></li>
-      {% endif %}
-    </ul>
-  </nav>
+    {% if session.get('admin') %}
+    <!-- ADMIN NAVBAR -->
+    <a href="{{ url_for('admin_dashboard') }}">Dashboard</a>
+    <a href="{{ url_for('logout') }}">Logout</a>
 
-  <div class="content">
-    {% block content %}{% endblock %}
-  </div>
+{% elif session.get('user') %}
+    <!-- USER NAVBAR -->
+    <a href="{{ url_for('home') }}">Home</a>
+    <a href="{{ url_for('plan') }}">Plan Trip</a>
+    <a href="{{ url_for('recent') }}">Recent</a>
+    <a href="{{ url_for('feedback') }}">Feedback</a>
+    <a href="{{ url_for('logout') }}">Logout</a>
 
-  <footer class="footer">
-    &copy; {{ current_year or "2025" }} | Public Transport Delay Prediction System
-  </footer>
+{% else %}
+    <!-- GUEST -->
+    <div class="dropdown">
+      <button class="dropdown-toggle">
+        Login <i class="fa-solid fa-chevron-down"></i>
+      </button>
 
-  <!-- Flash toasts -->
-  {% with msgs = get_flashed_messages(with_categories=true) %}
-    {% if msgs %}
-      <div id="flash">
-        {% for cat,msg in msgs %}
-          <div class="toast {{ cat }}">{{ msg }}</div>
-        {% endfor %}
+      <div class="dropdown-menu">
+        <a href="{{ url_for('login') }}">
+          <i class="fa-solid fa-user"></i> User Login
+        </a>
+        <a href="{{ url_for('admin_login') }}">
+          <i class="fa-solid fa-shield-halved"></i> Admin Login
+        </a>
       </div>
-      <script>setTimeout(()=>{const f=document.getElementById('flash'); if(f) f.remove();}, 3000);</script>
-    {% endif %}
-  {% endwith %}
+    </div>
+{% endif %}
 
-  <!-- Small helpers: mobile toggle + active link -->
-  <script>
-    document.addEventListener("DOMContentLoaded", function () {
-      const mapData = {{ map_payload|safe }};
-      if (!mapData) return;
+  </div>
+</nav>
 
-      const src = mapData.src;
-      const dst = mapData.dst;
+<div class="content">
+  {% block content %}{% endblock %}
+</div>
 
-      const map = L.map('tripMap');
+<footer>
+  © {{ current_year or "2025" }} Public Transport Delay Prediction System
+</footer>
 
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 18,
-        attribution: '&copy; OpenStreetMap contributors'
-      }).addTo(map);
-
-      const srcLatLng = [src.lat, src.lon];
-      const dstLatLng = [dst.lat, dst.lon];
-
-      L.marker(srcLatLng).addTo(map).bindPopup(src.label);
-      L.marker(dstLatLng).addTo(map).bindPopup(dst.label);
-
-      L.polyline([srcLatLng, dstLatLng], { weight: 3 }).addTo(map);
-
-      const bounds = L.latLngBounds([srcLatLng, dstLatLng]);
-      map.fitBounds(bounds, { padding: [30, 30] });
-
-    // ✅ IMPORTANT: fix blank map after animation
-      setTimeout(() => {
-        map.invalidateSize();
-      }, 300);
-    });
-  </script>
-
-  </script>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
-
-  {% block extra_scripts %}{% endblock %}
 </body>
 </html>
