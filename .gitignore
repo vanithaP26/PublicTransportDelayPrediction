@@ -9,3 +9,6 @@ flask_app/data/final_dataset.csv
 # Large datasets
 flask_app/data/*.csv
 
+*.db
+*.sqbpro
+
