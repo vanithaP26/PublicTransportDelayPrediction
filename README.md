@@ -365,7 +365,7 @@ __pycache__/
 
 # 👩‍💻 Author
 
-## Vani P
+## Vanitha P
 
 GitHub:
 
