@@ -25,11 +25,24 @@
       <input name="date" type="date" required
              style="width:100%;padding:10px;border:1px solid #cfd6e4;border-radius:8px;">
     </div>
-    <div>
-      <label>Hour (0–23)</label>
-      <input name="hour" type="number" min="0" max="23" required
-             style="width:100%;padding:10px;border:1px solid #cfd6e4;border-radius:8px;">
-    </div>
+    <label>Time</label>
+<div style="display:flex; gap:10px; align-items:center;">
+  <input
+    type="text"
+    name="time_text"
+    placeholder="e.g. 7.15"
+    pattern="^\d{1,2}(\.\d{1,2})?$"
+    title="Enter time like 7.15 or 10.30"
+    required
+    style="width:100%;padding:10px;border:1px solid #cfd6e4;border-radius:8px;"
+  />
+
+  <select name="ampm" required style="padding:10px;border-radius:8px;">
+    <option value="AM">AM</option>
+    <option value="PM">PM</option>
+  </select>
+</div>
+
 
     <button class="btn btn-primary" type="submit" style="width:100%;">Predict</button>
   </form>

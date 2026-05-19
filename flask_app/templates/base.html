@@ -131,29 +131,24 @@
   <div class="logo">🚦 Public Transport Delay</div>
 
   <div class="nav-links">
-    <a href="{{ url_for('home') }}">Home</a>
-    <a href="{{ url_for('about') }}">About</a>
-    <a href="{{ url_for('plan') }}">Plan Trip</a>
-    <a href="{{ url_for('dashboard') }}">Dashboard</a>
-    <a href="{{ url_for('recent') }}">Recent</a>
-    <a href="{{ url_for('feedback') }}">Feedback</a>
-
-
-    {% if session.get('admin') %}
+  
+  {% if session.get('admin') %}
     <!-- ADMIN NAVBAR -->
     <a href="{{ url_for('admin_dashboard') }}">Dashboard</a>
-    <a href="{{ url_for('logout') }}">Logout</a>
+    <a href="{{ url_for('admin_logout') }}">Logout</a>
 
-{% elif session.get('user') %}
+  {% elif session.get('user') %}
     <!-- USER NAVBAR -->
     <a href="{{ url_for('home') }}">Home</a>
     <a href="{{ url_for('plan') }}">Plan Trip</a>
     <a href="{{ url_for('recent') }}">Recent</a>
+    <a href="{{ url_for('dashboard') }}">Dashboard</a>
     <a href="{{ url_for('feedback') }}">Feedback</a>
     <a href="{{ url_for('logout') }}">Logout</a>
 
-{% else %}
+  {% else %}
     <!-- GUEST -->
+    <a href="{{ url_for('signup') }}">Register</a>
     <div class="dropdown">
       <button class="dropdown-toggle">
         Login <i class="fa-solid fa-chevron-down"></i>

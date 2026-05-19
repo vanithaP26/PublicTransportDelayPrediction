@@ -649,7 +649,13 @@ def delete_feedback(fid):
 def admin_logout():
     session.pop("admin", None)
     flash("Logged out successfully", "success")
-    return redirect(url_for("admin_login"))
+    return redirect(url_for("home"))
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("home"))
+
 
 # show the login form (GET)
 @app.get("/login")
@@ -714,16 +720,30 @@ def predict():
         return "<h3 style='color:#b00020'>Please enter both Source and Destination.</h3>"
 
     # parse date/hour from form (plan.html uses input type=date and hour number)
-    date_str = (request.form.get("date") or "").strip()
-    hour_str = (request.form.get("hour") or "").strip()
-    when_dt = None
+    # ---- parse date + typed time with AM/PM ----
+    date_str  = (request.form.get("date") or "").strip()
+    time_text = (request.form.get("time_text") or "").strip()
+    ampm      = (request.form.get("ampm") or "AM").strip()
+
+    # extract hour from typed time (e.g. "7.15" → 7)
+    try:
+        hour_part = int(time_text.split(".")[0])
+    except Exception:
+        return "<h3 style='color:#b00020'>Invalid time format. Use 7.15 or 10.30</h3>"
+
+    # convert to 24-hour format
+    if ampm == "PM" and hour_part != 12:
+        hour = hour_part + 12
+    elif ampm == "AM" and hour_part == 12:
+        hour = 0
+    else:
+        hour = hour_part
+
+    # build datetime
     try:
         if date_str:
-            # date input is yyyy-mm-dd
-            parts = [int(x) for x in date_str.split("-")]
-            y,m,d = parts[0], parts[1], parts[2]
-            h = int(hour_str) if hour_str.isdigit() else 9
-            when_dt = datetime(year=y, month=m, day=d, hour=h)
+            y, m, d = [int(x) for x in date_str.split("-")]
+            when_dt = datetime(year=y, month=m, day=d, hour=hour)
         else:
             when_dt = datetime.now()
     except Exception:
